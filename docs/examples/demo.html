@@ -1,0 +1,45 @@
+<!doctype html><meta charset=utf-8>
+<style>body{max-width:44em;margin:2em auto;font-family:serif;line-height:1.7}pre{background:#f4f4f4;padding:.8em;border-left:3px solid #888;font-family:monospace}b.cn{color:#a00}</style>
+# 素数を数える
+<p>
+まず全体の形だけを述べる。細部はあとまわしにする。
+<p>
+<pre><b class=cn>&lt;&lt;*&gt;&gt;=</b>
+#!/usr/bin/env perl
+use strict; use warnings;
+<b class=cn>&lt;&lt;定数の設定&gt;&gt;</b>
+<b class=cn>&lt;&lt;篩を回す&gt;&gt;</b>
+<b class=cn>&lt;&lt;結果を表示する&gt;&gt;</b>
+</pre>
+<p>
+上限は 50 にしておく。
+<p>
+<pre><b class=cn>&lt;&lt;定数の設定&gt;&gt;=</b>
+my $limit = 50;
+</pre>
+<p>
+$p$ の倍数は $p^2$ から消せばよい。それより小さい倍数は
+より小さい約数を持つので、すでに消えているからである。
+<p>
+<pre><b class=cn>&lt;&lt;篩を回す&gt;&gt;=</b>
+my @composite;
+for (my $p = 2; $p * $p &lt;= $limit; $p++) {
+    next if $composite[$p];
+    <b class=cn>&lt;&lt;p の倍数を消す&gt;&gt;</b>
+}
+</pre>
+<p>
+内側のループだけを別の節に切り出しておく。
+インデントは参照側の位置が引き継がれる。
+<p>
+<pre><b class=cn>&lt;&lt;p の倍数を消す&gt;&gt;=</b>
+for (my $q = $p * $p; $q &lt;= $limit; $q += $p) {
+    $composite[$q] = 1;
+}
+</pre>
+<p>
+生き残ったものが素数である。
+<p>
+<pre><b class=cn>&lt;&lt;結果を表示する&gt;&gt;=</b>
+print join(' ', grep { !$composite[$_] } 2 .. $limit), "\n";
+</pre>

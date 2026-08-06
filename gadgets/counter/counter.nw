@@ -1,0 +1,177 @@
+# 共有カウンタ Gadget
+
+これは Cloudflare OS の Gadget を文芸的プログラミングで書いた例である。
+複数のブラウザから同じ数値を増減でき、誰かが押したら全員の画面が即座に更新される。
+
+Gadget は必ず二つのファイルからなる。`server.js` はサーバ側、`client.js`
+はブラウザ側で、その二つが `<<...>>` の記法で一つの文書から取り出される。
+以下では先に全体の形を述べ、細部はあとまわしにする。
+
+---
+
+## サーバ側の全体像
+
+サーバは Durable Object という Cloudflare の仕組みで、
+**一つの Gadget インスタンスにつき一つだけ存在するサーバオブジェクト**である。
+状態を持ち、複数のブラウザからの接続を同時に相手にする。
+
+クラス名は必ず `Gadget` でなければならない。
+
+<<server.js>>=
+import { DurableObject } from "cloudflare:workers";
+
+export class Gadget extends DurableObject {
+  <<購読者の集合を用意する>>
+  <<現在値を読む>>
+  <<値を増減する>>
+  <<更新の購読を受け付ける>>
+  <<全員に配信する>>
+}
+@
+
+## 購読者の集合
+
+「誰かが押したら全員の画面が更新される」を実現するために、
+接続中のブラウザから預かったコールバックを保持しておく。
+これはメモリ上の集合でよい。接続が切れれば意味を失う情報だからである。
+
+<<購読者の集合を用意する>>=
+constructor(ctx, env) {
+  super(ctx, env);
+  this.subscribers = new Set();
+}
+@
+
+## 現在値
+
+数値そのものは**メモリではなく Durable Object のストレージに置く**。
+サーバはいつ再起動してもよいことになっており、
+メモリに置いた値は再起動で消えてしまうからである。
+
+まだ一度も押されていなければ値は存在しないので、そのときは 0 とみなす。
+
+<<現在値を読む>>=
+
+async getCount() {
+  return (await this.ctx.storage.get("count")) ?? 0;
+}
+@
+
+## 増減
+
+読んで、足して、書き戻して、全員に知らせる。
+`delta` には `+1` か `-1` が来る。
+
+<<値を増減する>>=
+
+async increment(delta) {
+  const next = (await this.getCount()) + delta;
+  await this.ctx.storage.put("count", next);
+  this.broadcast(next);
+  return next;
+}
+@
+
+## 購読
+
+ブラウザは自分のコールバックをサーバに渡す。ここが Cap'n Web の面白いところで、
+**関数そのものを RPC で渡せる**。受け取った側には呼び出し可能なスタブが届く。
+
+ただし渡ってきたスタブは、このメソッドを抜けた時点で自動的に破棄される。
+長く持ち続けるには `.dup()` で複製を取らなければならない。
+また、ブラウザが閉じられたことは `onRpcBroken` で通知されるので、
+そこで集合から取り除く。
+
+<<更新の購読を受け付ける>>=
+
+async subscribe(callback) {
+  const held = callback.dup();
+  this.subscribers.add(held);
+  held.onRpcBroken(() => this.subscribers.delete(held));
+  return this.getCount();
+}
+@
+
+## 配信
+
+集合を舐めて全員に伝えるだけ。
+途中で切れた接続があっても他の配信を止めたくないので、失敗は握り潰す。
+
+<<全員に配信する>>=
+
+broadcast(count) {
+  for (const s of this.subscribers) {
+    s.update(count).catch(() => {});
+  }
+}
+@
+
+---
+
+## ブラウザ側の全体像
+
+`client.js` はサンドボックス化された iframe の中で動く。
+HTML ファイルは存在せず、**画面は全部 JavaScript から DOM を組み立てて作る**。
+
+グローバル変数 `gadget` が最初から用意されていて、これがサーバへの RPC スタブになる。
+`gadget.increment(1)` と書けば、サーバ側の `increment` が呼ばれる。
+
+<<client.js>>=
+<<画面を組み立てる>>
+<<サーバからの更新を受け取る>>
+<<最初の値を取ってきて表示する>>
+@
+
+## 画面
+
+数字を一つと、ボタンを二つ。それだけである。
+
+<<画面を組み立てる>>=
+const display = document.createElement("div");
+display.style.cssText = "font-size:5rem;text-align:center;font-family:sans-serif";
+
+function button(label, delta) {
+  const b = document.createElement("button");
+  b.textContent = label;
+  b.style.cssText = "font-size:2rem;width:4rem;margin:0 .5rem";
+  b.onclick = () => gadget.increment(delta);
+  return b;
+}
+
+const controls = document.createElement("div");
+controls.style.textAlign = "center";
+controls.append(button("-", -1), button("+", +1));
+document.body.append(display, controls);
+@
+
+## 更新の受け取り
+
+サーバに渡すコールバックは `RpcTarget` を継承したオブジェクトとして作る。
+サーバが `s.update(count)` を呼ぶと、ここの `update` が走る。
+
+`[Symbol.dispose]` は接続が切れたときに呼ばれる。
+再接続すればよいので、そのまま購読し直す。
+
+<<サーバからの更新を受け取る>>=
+
+class Watcher extends RpcTarget {
+  update(count) {
+    display.textContent = count;
+  }
+
+  [Symbol.dispose]() {
+    gadget.subscribe(new Watcher());
+  }
+}
+@
+
+## 起動
+
+購読を申し込むと現在値が返ってくるので、それを最初の表示にする。
+`subscribe` が現在値を返す設計にしてあるおかげで、
+「購読する」と「初期値を取る」を一往復で済ませられる。
+
+<<最初の値を取ってきて表示する>>=
+
+display.textContent = await gadget.subscribe(new Watcher());
+@

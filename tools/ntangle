@@ -1,0 +1,43 @@
+#!/usr/bin/env perl
+# ntangle - a minimal noweb-style tangler (about 50 lines of real work).
+#   usage: ntangle [-r rootname] file.nw > output
+use strict; use warnings;
+
+my $root = '*';
+if (@ARGV >= 2 && $ARGV[0] eq '-r') { shift; $root = shift; }
+
+# ---- 1. Read the document, collecting chunks. Everything that is not
+#         inside a chunk is prose, and is simply ignored by the tangler.
+my (%chunk, %seen_order); my $cur;
+while (my $line = <>) {
+    if ($line =~ /^<<(.+)>>=\s*$/) {           # chunk definition begins
+        $cur = $1;
+        $chunk{$cur} ||= [];                    # repeated names append
+        $seen_order{$cur} //= scalar keys %seen_order;
+        next;
+    }
+    if (defined $cur && $line =~ /^\@\s*$/) { $cur = undef; next; }  # chunk ends
+    push @{$chunk{$cur}}, $line if defined $cur;
+}
+
+# ---- 2. Expand the root chunk recursively. A reference may sit at any
+#         indentation; that indentation is prefixed to every expanded line,
+#         which is what keeps the output readable in indentation-sensitive
+#         languages.
+sub expand {
+    my ($name, $indent, $stack) = @_;
+    die "ntangle: undefined chunk <<$name>>\n" unless exists $chunk{$name};
+    die "ntangle: cycle: " . join(' -> ', @$stack, $name) . "\n"
+        if grep { $_ eq $name } @$stack;
+    my $out = '';
+    for my $line (@{$chunk{$name}}) {
+        if ($line =~ /^(\s*)<<(.+)>>\s*$/) {
+            $out .= expand($2, $indent . $1, [@$stack, $name]);
+        } else {
+            $out .= $indent . $line;
+        }
+    }
+    return $out;
+}
+
+print expand($root, '', []);

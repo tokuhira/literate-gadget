@@ -1,0 +1,5 @@
+reference/*
+!reference/.gitkeep
+node_modules/
+*.log
+.DS_Store

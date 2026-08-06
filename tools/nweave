@@ -1,0 +1,22 @@
+#!/usr/bin/env perl
+# nweave - a minimal noweb-style weaver: .nw -> HTML.
+#   usage: nweave file.nw > file.html
+use strict; use warnings;
+print "<!doctype html><meta charset=utf-8>\n";
+print "<style>body{max-width:44em;margin:2em auto;font-family:serif;line-height:1.7}",
+      "pre{background:#f4f4f4;padding:.8em;border-left:3px solid #888;font-family:monospace}",
+      "b.cn{color:#a00}</style>\n";
+my $in = 0;
+while (my $l = <>) {
+    if ($l =~ /^<<(.+)>>=\s*$/) {                       # chunk opens
+        printf "<pre><b class=cn>&lt;&lt;%s&gt;&gt;=</b>\n", esc($1); $in = 1; next;
+    }
+    if ($in && $l =~ /^\@\s*$/) { print "</pre>\n"; $in = 0; next; }   # chunk closes
+    if ($in) {                                          # inside a chunk
+        my $e = esc($l);
+        $e =~ s/&lt;&lt;(.+?)&gt;&gt;/<b class=cn>&lt;&lt;$1&gt;&gt;<\/b>/g;
+        print $e; next;
+    }
+    print $l =~ /^\s*$/ ? "<p>\n" : $l;                  # prose passes through
+}
+sub esc { my $s = shift; $s =~ s/&/&amp;/g; $s =~ s/</&lt;/g; $s =~ s/>/&gt;/g; $s }

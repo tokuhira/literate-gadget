@@ -1,0 +1,179 @@
+<!doctype html><meta charset=utf-8>
+<style>body{max-width:44em;margin:2em auto;font-family:serif;line-height:1.7}pre{background:#f4f4f4;padding:.8em;border-left:3px solid #888;font-family:monospace}b.cn{color:#a00}</style>
+# 共有カウンタ Gadget
+<p>
+これは Cloudflare OS の Gadget を文芸的プログラミングで書いた例である。
+複数のブラウザから同じ数値を増減でき、誰かが押したら全員の画面が即座に更新される。
+<p>
+Gadget は必ず二つのファイルからなる。`server.js` はサーバ側、`client.js`
+はブラウザ側で、その二つが `<<...>>` の記法で一つの文書から取り出される。
+以下では先に全体の形を述べ、細部はあとまわしにする。
+<p>
+---
+<p>
+## サーバ側の全体像
+<p>
+サーバは Durable Object という Cloudflare の仕組みで、
+**一つの Gadget インスタンスにつき一つだけ存在するサーバオブジェクト**である。
+状態を持ち、複数のブラウザからの接続を同時に相手にする。
+<p>
+クラス名は必ず `Gadget` でなければならない。
+<p>
+<pre><b class=cn>&lt;&lt;server.js&gt;&gt;=</b>
+import { DurableObject } from "cloudflare:workers";
+
+export class Gadget extends DurableObject {
+  <b class=cn>&lt;&lt;購読者の集合を用意する&gt;&gt;</b>
+  <b class=cn>&lt;&lt;現在値を読む&gt;&gt;</b>
+  <b class=cn>&lt;&lt;値を増減する&gt;&gt;</b>
+  <b class=cn>&lt;&lt;更新の購読を受け付ける&gt;&gt;</b>
+  <b class=cn>&lt;&lt;全員に配信する&gt;&gt;</b>
+}
+</pre>
+<p>
+## 購読者の集合
+<p>
+「誰かが押したら全員の画面が更新される」を実現するために、
+接続中のブラウザから預かったコールバックを保持しておく。
+これはメモリ上の集合でよい。接続が切れれば意味を失う情報だからである。
+<p>
+<pre><b class=cn>&lt;&lt;購読者の集合を用意する&gt;&gt;=</b>
+constructor(ctx, env) {
+  super(ctx, env);
+  this.subscribers = new Set();
+}
+</pre>
+<p>
+## 現在値
+<p>
+数値そのものは**メモリではなく Durable Object のストレージに置く**。
+サーバはいつ再起動してもよいことになっており、
+メモリに置いた値は再起動で消えてしまうからである。
+<p>
+まだ一度も押されていなければ値は存在しないので、そのときは 0 とみなす。
+<p>
+<pre><b class=cn>&lt;&lt;現在値を読む&gt;&gt;=</b>
+
+async getCount() {
+  return (await this.ctx.storage.get("count")) ?? 0;
+}
+</pre>
+<p>
+## 増減
+<p>
+読んで、足して、書き戻して、全員に知らせる。
+`delta` には `+1` か `-1` が来る。
+<p>
+<pre><b class=cn>&lt;&lt;値を増減する&gt;&gt;=</b>
+
+async increment(delta) {
+  const next = (await this.getCount()) + delta;
+  await this.ctx.storage.put("count", next);
+  this.broadcast(next);
+  return next;
+}
+</pre>
+<p>
+## 購読
+<p>
+ブラウザは自分のコールバックをサーバに渡す。ここが Cap'n Web の面白いところで、
+**関数そのものを RPC で渡せる**。受け取った側には呼び出し可能なスタブが届く。
+<p>
+ただし渡ってきたスタブは、このメソッドを抜けた時点で自動的に破棄される。
+長く持ち続けるには `.dup()` で複製を取らなければならない。
+また、ブラウザが閉じられたことは `onRpcBroken` で通知されるので、
+そこで集合から取り除く。
+<p>
+<pre><b class=cn>&lt;&lt;更新の購読を受け付ける&gt;&gt;=</b>
+
+async subscribe(callback) {
+  const held = callback.dup();
+  this.subscribers.add(held);
+  held.onRpcBroken(() =&gt; this.subscribers.delete(held));
+  return this.getCount();
+}
+</pre>
+<p>
+## 配信
+<p>
+集合を舐めて全員に伝えるだけ。
+途中で切れた接続があっても他の配信を止めたくないので、失敗は握り潰す。
+<p>
+<pre><b class=cn>&lt;&lt;全員に配信する&gt;&gt;=</b>
+
+broadcast(count) {
+  for (const s of this.subscribers) {
+    s.update(count).catch(() =&gt; {});
+  }
+}
+</pre>
+<p>
+---
+<p>
+## ブラウザ側の全体像
+<p>
+`client.js` はサンドボックス化された iframe の中で動く。
+HTML ファイルは存在せず、**画面は全部 JavaScript から DOM を組み立てて作る**。
+<p>
+グローバル変数 `gadget` が最初から用意されていて、これがサーバへの RPC スタブになる。
+`gadget.increment(1)` と書けば、サーバ側の `increment` が呼ばれる。
+<p>
+<pre><b class=cn>&lt;&lt;client.js&gt;&gt;=</b>
+<b class=cn>&lt;&lt;画面を組み立てる&gt;&gt;</b>
+<b class=cn>&lt;&lt;サーバからの更新を受け取る&gt;&gt;</b>
+<b class=cn>&lt;&lt;最初の値を取ってきて表示する&gt;&gt;</b>
+</pre>
+<p>
+## 画面
+<p>
+数字を一つと、ボタンを二つ。それだけである。
+<p>
+<pre><b class=cn>&lt;&lt;画面を組み立てる&gt;&gt;=</b>
+const display = document.createElement("div");
+display.style.cssText = "font-size:5rem;text-align:center;font-family:sans-serif";
+
+function button(label, delta) {
+  const b = document.createElement("button");
+  b.textContent = label;
+  b.style.cssText = "font-size:2rem;width:4rem;margin:0 .5rem";
+  b.onclick = () =&gt; gadget.increment(delta);
+  return b;
+}
+
+const controls = document.createElement("div");
+controls.style.textAlign = "center";
+controls.append(button("-", -1), button("+", +1));
+document.body.append(display, controls);
+</pre>
+<p>
+## 更新の受け取り
+<p>
+サーバに渡すコールバックは `RpcTarget` を継承したオブジェクトとして作る。
+サーバが `s.update(count)` を呼ぶと、ここの `update` が走る。
+<p>
+`[Symbol.dispose]` は接続が切れたときに呼ばれる。
+再接続すればよいので、そのまま購読し直す。
+<p>
+<pre><b class=cn>&lt;&lt;サーバからの更新を受け取る&gt;&gt;=</b>
+
+class Watcher extends RpcTarget {
+  update(count) {
+    display.textContent = count;
+  }
+
+  [Symbol.dispose]() {
+    gadget.subscribe(new Watcher());
+  }
+}
+</pre>
+<p>
+## 起動
+<p>
+購読を申し込むと現在値が返ってくるので、それを最初の表示にする。
+`subscribe` が現在値を返す設計にしてあるおかげで、
+「購読する」と「初期値を取る」を一往復で済ませられる。
+<p>
+<pre><b class=cn>&lt;&lt;最初の値を取ってきて表示する&gt;&gt;=</b>
+
+display.textContent = await gadget.subscribe(new Watcher());
+</pre>

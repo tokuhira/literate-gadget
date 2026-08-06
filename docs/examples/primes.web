@@ -1,0 +1,40 @@
+\datethis
+@* Introduction.
+This program prints the primes below |limit|, using the sieve of
+Eratosthenes. We state the overall shape of the program first and
+defer every detail to a later section.
+
+@d limit=50
+
+@p program primes(output);
+var @<Global variables@>@;
+begin
+  @<Cross out the composites@>;
+  @<Print the survivors@>;
+end.
+
+@* The sieve. The array |composite| records what we have crossed out.
+@<Global variables@>=
+composite: array[2..limit] of boolean;
+p,q,n: integer;
+
+@ We need only cross out multiples of $p$ starting at $p^2$, because
+every smaller multiple has a smaller factor and is already gone.
+@<Cross out the composites@>=
+for n:=2 to limit do composite[n]:=false;
+p:=2;
+while p*p<=limit do
+  begin
+  if not composite[p] then
+    begin
+    q:=p*p;
+    while q<=limit do begin composite[q]:=true; q:=q+p; end;
+    end;
+  p:=p+1;
+  end
+
+@ Whatever survives is prime.
+@<Print the survivors@>=
+for n:=2 to limit do
+  if not composite[n] then write(n:4);
+writeln
