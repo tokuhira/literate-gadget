@@ -158,6 +158,28 @@ ntangle -r client.js counter.nw > client.js   # 26 行
 差し替え時点でフォークの `main` は上流と同一コミット `0eaec6c` だったため、
 再 clone せず `git remote set-url` だけで済ませている。
 
+#### フォークのブランチ構成
+
+| ブランチ | 役割 |
+|---|---|
+| `main` | 上流の素の写し。**触らない**。上流追従はここに当てる |
+| `literate-gadget-minimal` | この実験用の最小構成。`setup.sh` が clone するのはこちら |
+
+`literate-gadget-minimal` は `main` に**リネーム 15 件だけ**を載せたもの
+（`15 files changed, 0 insertions(+), 0 deletions(-)`）。
+何を変えたかは `git diff main..literate-gadget-minimal` で一覧できる。
+
+リモートは 2 つ登録してある。`upstream` は**事故防止のため push URL を潰してある**
+（規約 4）。
+
+```sh
+origin    https://github.com/tokuhira/cloudflare-os.git   (fetch/push)
+upstream  https://github.com/cloudflare/cloudflare-os.git (fetch のみ)
+```
+
+なお clone は `--depth 1` の shallow なので、**上流追従の際は先に
+`git fetch --unshallow upstream` が要る**（未実施・未検証）。
+
 #### メモリ不足で落ちる問題と、その回避
 
 **素で走らせると OOM killer に殺される。** 実際に落ちたうえ、
@@ -173,6 +195,14 @@ ntangle -r client.js counter.nw > client.js   # 26 行
 `gatekeeper-` で始まり `wrangler.jsonc` を持つものだけを拾うので、これで検出から外れる。
 **ディレクトリ名も package 名も変えないため pnpm workspace とロックファイルは無傷**で、
 戻すのもリネームし直すだけ。
+
+```sh
+# 特定の gatekeeper を戻す（手順2 で承認 UI を見るときはこれが要る）
+mv packages/gatekeeper-github/wrangler.jsonc{.disabled,}
+```
+
+**この間引きはフォークの `literate-gadget-minimal` ブランチにコミット済み**なので、
+`setup.sh` から clone し直せば最初から間引かれた状態で始まる。
 
 `gatekeeper-context` **だけは残す**こと。core が Context アカウントを
 自動プロビジョンする旨が `run-dev-server.js` のコメントにあり、外すと壊れる恐れがある

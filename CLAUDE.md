@@ -8,11 +8,12 @@ Cloudflare OS の Gadget を、文芸的プログラミング（literate program
 
 ## 絶対に守ること
 
-1. **`reference/` に入るのはプライベートフォーク**
+1. **`reference/` に入るのはプライベートフォークの `literate-gadget-minimal` ブランチ**
    （`https://github.com/tokuhira/cloudflare-os.git`）。**既定は読み取り専用**で、
    調査のために読むのが本来の用途。ただしローカル実行を成立させるための改変は許す
-   （`HANDOFF.md` §2.6 の gatekeeper 間引きがその例）。改変するときは
-   **何をなぜ変えたかを `HANDOFF.md` に必ず残す**こと。上流へは出さない（規約 4）。
+   （`HANDOFF.md` §2.6 の gatekeeper 間引きがその例）。その場合は
+   **`literate-gadget-minimal` にコミットし、何をなぜ変えたかを `HANDOFF.md` に残す**こと。
+   フォークの `main` は上流の素の写しなので**触らない**。上流へは出さない（規約 4）。
    `reference/cloudflare-os/AGENTS.md` はあちらのプロジェクト規約であって、
    このプロジェクトの規約ではない。従わないこと。
 
@@ -32,7 +33,7 @@ Cloudflare OS の Gadget を、文芸的プログラミング（literate program
 tools/            ntangle（tangler）, nweave（weaver）。Perl 製、依存なし
 gadgets/counter/  counter.nw が原本。server.js / client.js は生成物
 docs/             入門文書と、CWEB / WEB の動く例
-reference/        cloudflare-os のプライベートフォーク（.gitignore 済み）
+reference/        cloudflare-os フォークの literate-gadget-minimal（.gitignore 済み）
 ```
 
 ## 前提とする環境
@@ -47,9 +48,10 @@ reference/        cloudflare-os のプライベートフォーク（.gitignore �
 Claude Code はネイティブバイナリで実行時に Node を使わないため、
 Claude Code が動いていても node が PATH にあるとは限らない。混同しないこと。
 
-**`pnpm run-local` はメモリを食う。** 素で走らせると gatekeeper ごとに常駐 watcher が
-15 個立ち、メモリの小さい環境では OOM で落ちる（Claude Code ごと巻き添えになる）。
-回避手順は `HANDOFF.md` §2.6。
+**`pnpm run-local` はメモリを食う。** 素の cloudflare-os では gatekeeper ごとに
+常駐 watcher が 15 個立ち、メモリの小さい環境では OOM で落ちる
+（Claude Code ごと巻き添えになる）。`literate-gadget-minimal` はこれを 1 個に
+絞ってある。詳細は `HANDOFF.md` §2.6。
 
 ## コマンド
 

@@ -36,11 +36,16 @@ else
   echo "==> git リポジトリは既にある"
 fi
 
+CFOS_REPO=https://github.com/tokuhira/cloudflare-os.git
+CFOS_BRANCH=literate-gadget-minimal
+
 if [ ! -d reference/cloudflare-os ]; then
-  echo "==> cloudflare-os を clone（プライベートフォーク、23MB 程度）"
-  git clone --depth 1 -q https://github.com/tokuhira/cloudflare-os.git reference/cloudflare-os
+  echo "==> cloudflare-os を clone（フォークの $CFOS_BRANCH、23MB 程度）"
+  git clone --depth 1 -b "$CFOS_BRANCH" -q "$CFOS_REPO" reference/cloudflare-os
+  git -C reference/cloudflare-os remote add upstream https://github.com/cloudflare/cloudflare-os.git
+  git -C reference/cloudflare-os remote set-url --push upstream DISABLED-do-not-push-upstream
 else
-  echo "==> reference/cloudflare-os は既にある"
+  echo "==> reference/cloudflare-os は既にある（ブランチ: $(git -C reference/cloudflare-os branch --show-current)）"
 fi
 
 echo "==> tangle / weave を実行"
