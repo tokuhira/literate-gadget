@@ -37,8 +37,8 @@ else
 fi
 
 if [ ! -d reference/cloudflare-os ]; then
-  echo "==> cloudflare-os を clone（参照専用、23MB 程度）"
-  git clone --depth 1 -q https://github.com/cloudflare/cloudflare-os.git reference/cloudflare-os
+  echo "==> cloudflare-os を clone（プライベートフォーク、23MB 程度）"
+  git clone --depth 1 -q https://github.com/tokuhira/cloudflare-os.git reference/cloudflare-os
 else
   echo "==> reference/cloudflare-os は既にある"
 fi

@@ -146,6 +146,46 @@ ntangle -r client.js counter.nw > client.js   # 26 行
 散文比率 43%。純正 `workspace-docs` の 7.0% と比べると、
 これが「literate 化する」という言葉の実体。
 
+### 2.6 ローカル実行（手順1）— 2026-08-07 に実行して確認
+
+**`pnpm run-local` は動く。** `http://localhost:8787` が HTTP 200 を返し、
+ログに `[wrangler:info] Ready on http://localhost:8787` が出る。
+初回応答は 15 秒、暖機後は 11〜25ms。**LLM の API キーは起動自体には不要**だった
+（キーが要るのはエージェントを使う段階と思われるが、そこは未確認）。
+
+`reference/` の origin は上流ではなく**プライベートフォーク**
+`https://github.com/tokuhira/cloudflare-os.git` に差し替えた。
+差し替え時点でフォークの `main` は上流と同一コミット `0eaec6c` だったため、
+再 clone せず `git remote set-url` だけで済ませている。
+
+#### メモリ不足で落ちる問題と、その回避
+
+**素で走らせると OOM killer に殺される。** 実際に落ちたうえ、
+**Claude Code のプロセス自体も巻き添えで kill された**（`dmesg` に記録あり）。
+このときの WSL2 の総メモリは 3.7Gi（ホスト 7.6 GiB の既定 50%、`.wslconfig` なし）。
+
+原因は `run-dev-server.js` の作りにある。`packages/gatekeeper-*` を走査し、
+**gatekeeper ごとに常駐 watcher を spawn する**（configurator UI と app UI）。
+16 パッケージで watcher 15 個、実測 RSS は 1 個あたり約 110MB。
+
+回避策として、各 `packages/gatekeeper-*/wrangler.jsonc` を
+`wrangler.jsonc.disabled` にリネームした。`findGatekeepers` は
+`gatekeeper-` で始まり `wrangler.jsonc` を持つものだけを拾うので、これで検出から外れる。
+**ディレクトリ名も package 名も変えないため pnpm workspace とロックファイルは無傷**で、
+戻すのもリネームし直すだけ。
+
+`gatekeeper-context` **だけは残す**こと。core が Context アカウントを
+自動プロビジョンする旨が `run-dev-server.js` のコメントにあり、外すと壊れる恐れがある
+（実際に外して確かめてはいない）。
+
+結果、watcher は 15 → 1、空きメモリ 1.4Gi で安定動作した。
+なお**手順3 に gatekeeper は不要**である。要るのは手順2 の承認 UI 観察のときだけ。
+
+もう一点。**クラッシュすると `run-dev-server.js` が孤児として生き残り、
+watcher をぶら下げ続ける。** 実際に 2.4 時間ぶんの残骸が約 600MB を占めていた。
+再実行の前に `ps -eo pid,etimes,args | grep cloudflare-os` で
+経過時間の長いものを確認して kill すること。
+
 ---
 
 ## 3. 未検証・推測にとどまること
@@ -158,7 +198,9 @@ ntangle -r client.js counter.nw > client.js   # 26 行
 | `.nw` を 4 つ目のファイルとして Gadget に置けるか | 未検証。Y.Map なので技術的には置けるはずだが、拡張子の制限やエージェントの扱いは不明 |
 | tangle をどこで走らせるか | **未決**。ビルド工程が存在しないため差し込む場所がない |
 | Source Map が Gadget のサンドボックスで機能するか | 未検証 |
-| `pnpm run-local` が動くか | **一度も実行していない** |
+| ~~`pnpm run-local` が動くか~~ | **検証済みに移動 → §2.6** |
+| Workshop でエージェントを動かすのに要る API キーの設定手順 | 未検証。起動自体には不要と確認したが、その先は未確認 |
+| `gatekeeper-context` を外すと core が壊れるか | 未検証。壊れる恐れがあるので残している |
 | 有澤誠訳での tangle / weave の訳語 | 不明。原本未確認 |
 
 `tangle` の実行場所については選択肢が 2 つある。
@@ -201,16 +243,17 @@ ntangle -r client.js counter.nw > client.js   # 26 行
 
 ## 5. 次にやること（推奨順）
 
-### 手順 1: 実機で動かす
+### 手順 1: 実機で動かす — **完了（2026-08-07）**
 
-`./setup.sh` を先に走らせていれば `reference/cloudflare-os/` に clone 済み。
+結果と、そこで踏んだ地雷は §2.6 にまとめた。**先にそちらを読むこと。**
+特にメモリ不足対策（gatekeeper の間引き）を飛ばすと OOM で落ちる。
 
 ```sh
 cd reference/cloudflare-os
 pnpm run-local          # → http://localhost:8787
 ```
 
-LLM の API キーが要る。`packageManager` は pnpm 11.17.0 が指定されている。
+`packageManager` は pnpm 11.17.0 が指定されている。
 
 ### 手順 2: 承認 UI を実際に見る
 

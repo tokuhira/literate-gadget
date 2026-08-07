@@ -3,3 +3,10 @@ reference/*
 node_modules/
 *.log
 .DS_Store
+
+# VS Code: プロジェクト全員に効く設定だけ追跡し、個人設定やキャッシュは無視する
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
