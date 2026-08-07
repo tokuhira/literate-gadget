@@ -4,6 +4,16 @@ node_modules/
 *.log
 .DS_Store
 
+# .gadget は追跡しない。生成物を git に入れる理由は「.nw の diff と .js の diff が
+# 並んで見えること」だが、これはバイナリで diff が読めず、しかもメタデータに生成時刻を
+# 持つため入力が同じでも毎回別バイトになる。tools/mkgadget.mjs でいつでも作り直せる。
+*.gadget
+
+# Claude Code: プロジェクト共通の設定だけ追跡し、個人の権限許可などは無視する
+# （settings.local.json には環境固有の絶対パスが入る）
+.claude/*
+!.claude/settings.json
+
 # VS Code: プロジェクト全員に効く設定だけ追跡し、個人設定やキャッシュは無視する
 .vscode/*
 !.vscode/settings.json

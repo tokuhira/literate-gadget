@@ -141,7 +141,7 @@ ntangle -r server.js counter.nw > server.js   # 31 行
 ntangle -r client.js counter.nw > client.js   # 26 行
 ```
 
-両方 `node --check` を通過。**ただし実機では未実行**（§3 参照）。
+両方 `node --check` を通過。**2026-08-07 に実機で動作を確認した**（§2.8）。
 
 散文比率 43%。純正 `workspace-docs` の 7.0% と比べると、
 これが「literate 化する」という言葉の実体。
@@ -216,6 +216,133 @@ watcher をぶら下げ続ける。** 実際に 2.4 時間ぶんの残骸が約 
 再実行の前に `ps -eo pid,etimes,args | grep cloudflare-os` で
 経過時間の長いものを確認して kill すること。
 
+### 2.7 エージェントを介さず Gadget を載せる道 — 2026-08-07
+
+**LLM の API キーなしで Gadget を実機に載せられる見込みが立った。** 以下は
+コードとドキュメントを読んで確認した事実と、実際に動かして確かめた事実の両方を含む。
+
+#### API キーについて（確認済み）
+
+- **セットアップウィザードはモデル未設定のまま完了する。** ブラウザで実際に通した。
+  最終画面に "Bring your own models — Plug in personal API tokens from any provider"
+  とあり、後付けできる設計。
+- **Claude Pro / Max のサブスクリプションに API クレジットは含まれない。**
+  claude.ai と Claude Code 用であり、API は別課金。Gadget が要求するのは素の API キー。
+- `--use-workers-ai-binding` フラグは**この用途には使えない**。
+  `docs/public-server.md` に「Inference itself no longer uses the binding; it goes
+  over HTTPS with the tokens above」とあり、`WORKERS_AI` バインディングは現在
+  webFetch の HTML→Markdown 変換専用。推論経路ではない。
+- キーを使う場合の設定先はリポジトリルートの `.dev.vars`（`KEY=VALUE`、gitignore 済み）。
+  `run-dev-server.js` の `loadDevVars()` が起動時に読む。Cloudflare AI Gateway 経由の
+  `CF_AI_GATEWAY*` という選択肢もある（`docs/public-server.md`、無料枠の存在が示唆
+  されているが**未検証**）。
+
+#### Blueprint インポートという迂回路（コードで確認）
+
+UI に**エージェントを通さない経路**がある。
+
+| 経路 | 場所 |
+|---|---|
+| `.gadget` のインポート | `BlueprintList.tsx:195` — `importBlueprint(file.stream())` |
+| Blueprint から Gadget 生成 | `BlueprintLandingPage.tsx:578` — `newGadgetFromBlueprint()` |
+| 画面 | `routes/blueprints.tsx`、`routes/blueprint.$id.tsx` |
+
+なお `Overseer.createGadget(title, chatId?, bindingName?)` は **`chatId` を省略すると
+恒久的に作成される**（`api.ts:1340-1349`）。`bindingName` 省略時の自動命名は
+「via the quick model **when configured**, else a generic fallback」とあり、
+**モデル不在が想定された設計**になっている。ただしフロントエンドの `createGadget`
+参照は全て `ChatInterface.tsx`（エージェントのツール呼び出しの描画）で、
+**ユーザが直接叩く UI は見当たらなかった**。だから Blueprint 経由を採る。
+
+#### `.gadget` の書き出し仕様（シリアライザから取得）
+
+§2.2 はバイナリを解いて得た読み取り仕様だったが、今回は**書き出し側の実装**から
+確認した。出典は `blueprint-archive.ts` の `encodeBlueprintArchivePrefix()` と
+`overseer.ts` の `initializeFromBlueprint()`。
+
+- プレフィックス 24 バイト、**ビッグエンディアン**（`DataView` の既定）
+- `content` は **gzip 圧縮した Yjs V2 更新**（`Y.encodeStateAsUpdateV2`）
+- **`contentLength` は圧縮後のバイト数**。R2 にそのまま入れ、読み出し時に
+  `DecompressionStream("gzip")` を通すため。`FixedLengthStream(contentLength)` で
+  検証されるので食い違うと弾かれる
+- doc は**無名ルート**の `Y.Map`（`doc.getMap()` を引数なしで呼ぶ）。キーがファイル名、
+  値が `Y.Text`。`overseer.ts` に "the archive always uses the unnamed root" と明記
+- メタデータの必須キーは `title, description, author, created, version, lastUpdated,
+  bindings`。`output` は省略可（"Absent means a generic app"）。上限はメタ 64KiB、本体 32MiB
+
+#### 作った道具と、その検証（実行して確認）
+
+`tools/mkgadget.mjs` — `.gadget` を組み立てる Node スクリプト。`yjs` は
+cloudflare-os 側の依存（`packages/workshop-backend/node_modules/yjs`）を借りるので、
+このリポジトリの「必須は perl / make / git」は崩していない。
+
+```sh
+node tools/mkgadget.mjs -o gadgets/counter/counter.gadget \
+    -t "Literate Counter" gadgets/counter/server.js gadgets/counter/client.js
+```
+
+検証は 2 段階で行った。
+
+1. **往復検証** — 生成物を解き直し、`server.js` / `client.js` が tangle 出力と
+   1 バイトも違わないことを確認した
+2. **形式の裏付け** — **同じロジックで Cloudflare 純正の `workspace-docs.gadget` が
+   解けた**。メタデータのキー構成が純正と完全に一致し、`bindings: {}` と `output` 省略も
+   純正がそうなっていた。ファイルサイズ（`server.js` 10,649 / `client.js` 70,113 /
+   `README.md` 5,879）も §2.2 の記録と一致し、そちらも再確認できた
+
+### 2.8 手順3 完了 — `counter.nw` は実機で動く（2026-08-07）
+
+**`counter.gadget` のインポートが通り、生成した Gadget が動作した。**
+これで §2.5 の「tangle 出力が実機で動くか」が検証済みになった。
+
+確認できたこと:
+
+- **Blueprint インポートは API キーなしで通る。** モデル未設定のまま、
+  `.gadget` のアップロード → Blueprint から Gadget 生成 → 実行、まで到達した。
+  §2.7 で立てた「エージェントを迂回する」筋書きが実際に成立した
+- **`counter.nw` の tangle 出力はそのまま動く。** ボタンでカウンタが増減する
+- **リアルタイム同期が働く。** 通常ウィンドウとシークレットウィンドウ、
+  つまり**別セッション間**で即座に連動した。タブ 2 つより強い条件で確認できている
+- 自作した `.gadget` が本家に受理された。§2.7 の形式理解が実機で裏付けられた形
+
+Gadget の画面には **App / Code / Connections** のタブがある。
+
+### 2.9 `.nw` は 4 つ目のファイルとして置ける（2026-08-07）
+
+**手順4 の前半が肯定で決着した。** `Code` タブから `counter.nw` を作成し、
+177 行の中身を投入し、その状態で **App が正常に動作した**。
+
+- **拡張子の制限はない。** `FileSidebar.tsx` の作成時検証は「空でない」「重複しない」
+  の 2 つだけ。`.nw` はそのまま通る
+- **エディタは `plaintext` にフォールバックする。** `getLanguage.ts` の `default` 節。
+  色は付かないが編集できる。`.nw` は散文とコードの混在なので単一言語の色付けは
+  そもそも不適切であり、妥当な落としどころ
+- **明示的な「保存」操作はない。** 編集が随時反映される（コードは Yjs の共有 doc なので
+  当然ではある）
+- **4 つ目のファイルがあっても App は壊れない。** ランタイムは `server.js` と
+  `client.js` だけを見て、知らないファイルは無視するとみられる
+
+これで「`.nw` を Gadget に同居させる」構想の土台ができた。
+
+#### 副産物: `counter.nw` の client に欠陥が見つかった
+
+ファイルを追加した際、**別セッション（シークレットウィンドウ）の連動が切れた**。
+リロードで復旧した。
+
+原因は `client.js` の再購読処理と考えられる（**機序は未確認**、§3 参照）。
+コードを変更すると Gadget が再起動し、RPC 接続が切れる。`client.js` には
+`[Symbol.dispose]()` で再購読する記述があるが、次の 3 点が足りない。
+
+1. `subscribe()` の**戻り値を捨てている**。初回は現在値の表示に使っているのに
+   再購読時は使っていないので、成功しても次のブロードキャストまで画面が古いまま
+2. **失敗を扱っていない**。`gadget` スタブ自体が切れていれば `subscribe()` は
+   失敗するが catch がなく、黙って死ぬ
+3. `Symbol.dispose` が**接続断で発火する保証がない**。§2.3 に記録した API は
+   「`onRpcBroken` で切断を検知する」であり、`Symbol.dispose` とは別の契機
+
+**これはプラットフォームの不具合ではなく `counter.nw` の欠陥。** 修正は
+§6.3（追記を差分の単位にする）を実測する好機でもある。
+
 ---
 
 ## 3. 未検証・推測にとどまること
@@ -224,12 +351,17 @@ watcher をぶら下げ続ける。** 実際に 2.4 時間ぶんの残骸が約 
 
 | 項目 | 状態 |
 |---|---|
-| `counter.nw` の tangle 出力が**実機で動くか** | 未検証。構文検査のみ |
-| `.nw` を 4 つ目のファイルとして Gadget に置けるか | 未検証。Y.Map なので技術的には置けるはずだが、拡張子の制限やエージェントの扱いは不明 |
+| ~~`counter.nw` の tangle 出力が**実機で動くか**~~ | **検証済みに移動 → §2.8** |
+| ~~`.nw` を 4 つ目のファイルとして Gadget に置けるか~~ | **検証済みに移動 → §2.9**。ただし「エージェントが `.nw` をどう扱うか」は API キーがないため未検証のまま |
+| 連動が切れた機序 | 未確認。「コード変更 → Gadget 再起動 → RPC 切断」と推測しているが、再起動を直接観測してはいない。§2.9 の 3 点も `client.js` を読んで立てた仮説 |
 | tangle をどこで走らせるか | **未決**。ビルド工程が存在しないため差し込む場所がない |
 | Source Map が Gadget のサンドボックスで機能するか | 未検証 |
 | ~~`pnpm run-local` が動くか~~ | **検証済みに移動 → §2.6** |
-| Workshop でエージェントを動かすのに要る API キーの設定手順 | 未検証。起動自体には不要と確認したが、その先は未確認 |
+| ~~`counter.gadget` のインポートが通るか~~ | **検証済みに移動 → §2.8** |
+| ~~Blueprint から生成した Gadget が実際に動くか~~ | **検証済みに移動 → §2.8** |
+| Gadget 画面の `Code` タブでファイルを追加・編集できるか | 未検証。手順4 はここを見るところから |
+| Workshop でエージェントを動かすのに要る API キーの設定手順 | 未検証。起動とセットアップウィザードには不要と確認済み（§2.7）。キーを入れる先は `.dev.vars` と分かっているが、実際に入れて動かしてはいない |
+| Cloudflare AI Gateway の無料枠の範囲 | 未検証。`docs/public-server.md` に "used for the free tier" とあるだけ |
 | `gatekeeper-context` を外すと core が壊れるか | 未検証。壊れる恐れがあるので残している |
 | 有澤誠訳での tangle / weave の訳語 | 不明。原本未確認 |
 
@@ -248,9 +380,12 @@ watcher をぶら下げ続ける。** 実際に 2.4 時間ぶんの残骸が約 
 |---|---|
 | `ntangle` | Perl 製の最小 tangler（40 行）。`-r <チャンク名>` でルートを選ぶ |
 | `nweave` | Perl 製の最小 weaver（.nw → HTML） |
+| `mkgadget.mjs` | `.gadget` Blueprint を組み立てる（Node）。実機へ載せる経路。詳細は §2.7 |
+| `ckgadget.mjs` | `.gadget` を解いて検証する。`mkgadget` の対。純正の `.gadget` も解ける |
 | `counter.nw` | 共有カウンタ Gadget の文芸的原本 ★中心的な成果物 |
 | `server.js` / `client.js` | `counter.nw` の tangle 出力 |
 | `counter.html` | `counter.nw` の weave 出力 |
+| `counter.gadget` | 実機へ持ち込む Blueprint。`server.js` / `client.js` を同梱したバイナリ |
 | `literate-programming-primer.md` | noweb / CWEB の最小入門（Lisp・Perl 話者向け） |
 | `demo.nw` / `demo.pl` / `demo.html` | 入門用の小例 |
 | `sieve.w` / `sieve.c` | CWEB の例と `#line` を含む tangle 出力 |
@@ -295,10 +430,39 @@ Gatekeeper を 1 つ設定して（README の各 gatekeeper パッケージに�
 - 自動承認ルールを後から追加したとき、pending がその場で適用される様子
 - `actionKind` を持たない action が「常に手動」として区別されているか
 
-### 手順 3: `counter.nw` を実機に載せる
+### 手順 3: `counter.nw` を実機に載せる — **完了（2026-08-07）**
 
-`server.js` / `client.js` を新規 Gadget に貼り、2 つのブラウザで開いて
-リアルタイム同期を確認する。**ここで初めて §2.5 が検証される。**
+結果は §2.8。当初は「エージェントに Gadget を作らせて貼る」想定だったが、
+それには API キーが要る。**Blueprint インポートなら鍵なしで載せられた**ので、
+順序を入れ替えてある（旧・手順5 が手順3 の前提になった）。詳細は §2.7。
+
+手順を再現するには:
+
+```sh
+make                        # .nw から server.js / client.js を作り直す
+node tools/mkgadget.mjs -o gadgets/counter/counter.gadget \
+    -t "Literate Counter" gadgets/counter/server.js gadgets/counter/client.js
+```
+
+`http://localhost:8787` の **Blueprints** 画面からこのファイルをインポートし、
+Blueprint から Gadget を生成して、**2 つのタブで開きカウンタが同期するか**を見る。
+**ここで初めて §2.5 が検証される。**
+
+Windows のファイル選択ダイアログからのパス:
+
+```
+\\wsl.localhost\Ubuntu\home\tokuhira\dev\literate-gadget\gadgets\counter\counter.gadget
+```
+
+弾かれた場合の切り分け。前 3 つは往復検証で潰してあるので、出るとすれば 4 番目——
+つまり**そこから先は文芸的プログラミング側の問題**であり、それが本来検証したいこと。
+
+| メッセージ | 意味 |
+|---|---|
+| `Invalid gadget archive magic number` | プレフィックスの組み立てが違う |
+| `Unsupported gadget archive version` | 形式版の不一致 |
+| `metadata is not valid JSON` | メタデータの生成が壊れている |
+| 上記以外／インポート後に動かない | 形式は通っている。`counter.nw` のコード側の問題 |
 
 ### 手順 4: `.nw` を 4 つ目のファイルとして置いてみる
 
