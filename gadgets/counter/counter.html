@@ -1,5 +1,5 @@
 <!doctype html><meta charset=utf-8>
-<style>body{max-width:44em;margin:2em auto;font-family:serif;line-height:1.7}pre{background:#f4f4f4;padding:.8em;border-left:3px solid #888;font-family:monospace}b.cn{color:#a00}</style>
+<style>body{max-width:44em;margin:2em auto;font-family:serif;line-height:1.7}pre{background:#f4f4f4;padding:.8em;border-left:3px solid #888;font-family:monospace}b.cn{color:#a00}.ev{margin:.6em 0;padding:.4em .8em;border-left:4px solid;font-size:.9em}.ev .k{font-weight:bold;margin-right:.6em}.ev .src{color:#555;font-family:monospace;font-size:.9em;margin-right:.6em}.ev-物証{border-color:#2a7;background:#f2faf6}.ev-証言{border-color:#c92;background:#fdf8ee}.ev-推理{border-color:#88a;background:#f5f5fa}</style>
 # 共有カウンタ Gadget
 <p>
 これは Cloudflare OS の Gadget を文芸的プログラミングで書いた例である。
@@ -52,6 +52,9 @@ constructor(ctx, env) {
 <p>
 まだ一度も押されていなければ値は存在しないので、そのときは 0 とみなす。
 <p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-07</span>コードを書き換えて再デプロイさせたあとも、リロードすれば数値は保たれていた</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:468</span>ALWAYS store server state in Durable Object storage, not just in memory</div>
+<p>
 <pre><b class=cn>&lt;&lt;現在値を読む&gt;&gt;=</b>
 
 async getCount() {
@@ -83,6 +86,9 @@ async increment(delta) {
 長く持ち続けるには `.dup()` で複製を取らなければならない。
 また、ブラウザが閉じられたことは `onRpcBroken` で通知されるので、
 そこで集合から取り除く。
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-07</span>二つのウィンドウで同時に開き、片方のボタンが即座にもう片方へ反映された</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:431</span>it is important to call .dup() on the callback stub, in order to obtain a long-lived stub</div>
 <p>
 <pre><b class=cn>&lt;&lt;更新の購読を受け付ける&gt;&gt;=</b>
 
@@ -121,6 +127,7 @@ HTML ファイルは存在せず、**画面は全部 JavaScript から DOM を�
 <pre><b class=cn>&lt;&lt;client.js&gt;&gt;=</b>
 <b class=cn>&lt;&lt;画面を組み立てる&gt;&gt;</b>
 <b class=cn>&lt;&lt;サーバからの更新を受け取る&gt;&gt;</b>
+<b class=cn>&lt;&lt;接続する&gt;&gt;</b>
 <b class=cn>&lt;&lt;最初の値を取ってきて表示する&gt;&gt;</b>
 </pre>
 <p>
@@ -152,7 +159,7 @@ document.body.append(display, controls);
 サーバが `s.update(count)` を呼ぶと、ここの `update` が走る。
 <p>
 `[Symbol.dispose]` は接続が切れたときに呼ばれる。
-再接続すればよいので、そのまま購読し直す。
+やることは接続しなおすことだけなので、次節の `connect` に任せる。
 <p>
 <pre><b class=cn>&lt;&lt;サーバからの更新を受け取る&gt;&gt;=</b>
 
@@ -162,18 +169,47 @@ class Watcher extends RpcTarget {
   }
 
   [Symbol.dispose]() {
-    gadget.subscribe(new Watcher());
+    connect();
   }
 }
 </pre>
 <p>
+## 接続と再接続
+<p>
+購読を申し込むと現在値が返ってくるので、それを表示にする。
+`subscribe` が現在値を返す設計にしてあるおかげで、
+「購読する」と「現在値を取る」を一往復で済ませられる。
+<p>
+この一往復を関数にまとめておくと、**起動時と再接続時で同じ処理を使える**。
+再接続のときも現在値を取り直せることが重要で、
+切れているあいだに他の誰かが押していれば、画面の数字はもう古い。
+<p>
+**ここでは再接続を自前で作らない。** 一度作って失敗している。
+`gadget` への呼び出しは、失敗しても例外を投げずに待ち続けるので、
+`try` / `catch` では何も捕まらない。書いたリトライは一度も実行されなかった。
+<p>
+待つ理由は、`gadget` が親フレーム側の Proxy で、
+再接続中の呼び出しを保留する作りになっているからである。
+保留を解除するのも、駄目なら iframe を再読み込みするのも、
+プラットフォームの側が既にやっている。**こちらで重ねて実装するものではない。**
+<p>
+<pre><b class=cn>&lt;&lt;接続する&gt;&gt;=</b>
+
+async function connect() {
+  display.textContent = await gadget.subscribe(new Watcher());
+}
+</pre>
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-07</span>リトライ版を実機で試したところ、数字もボタンも固まりエラーも出なかった</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:460</span>calls made while its replacement is being acquired will wait</div>
+<div class="ev ev-推理"><span class=k>推理</span><span class=src>GadgetUI.tsx:355-365</span>iframe から見える gadget は親フレームの Proxy で、保留中は pending.promise を待つ</div>
+<div class="ev ev-推理"><span class=k>推理</span><span class=src>GadgetUI.tsx:218-238</span>プラットフォーム側は Promise.race で 5 秒待ち、超えたら iframe を再読み込みする</div>
+<p>
 ## 起動
 <p>
-購読を申し込むと現在値が返ってくるので、それを最初の表示にする。
-`subscribe` が現在値を返す設計にしてあるおかげで、
-「購読する」と「初期値を取る」を一往復で済ませられる。
+あとは最初の一回を呼ぶだけである。
 <p>
 <pre><b class=cn>&lt;&lt;最初の値を取ってきて表示する&gt;&gt;=</b>
 
-display.textContent = await gadget.subscribe(new Watcher());
+await connect();
 </pre>

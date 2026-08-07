@@ -5,7 +5,15 @@ use strict; use warnings;
 print "<!doctype html><meta charset=utf-8>\n";
 print "<style>body{max-width:44em;margin:2em auto;font-family:serif;line-height:1.7}",
       "pre{background:#f4f4f4;padding:.8em;border-left:3px solid #888;font-family:monospace}",
-      "b.cn{color:#a00}</style>\n";
+      "b.cn{color:#a00}",
+      # 証拠。種類ごとに色を変え、強さの差が一目で分かるようにする。
+      ".ev{margin:.6em 0;padding:.4em .8em;border-left:4px solid;font-size:.9em}",
+      ".ev .k{font-weight:bold;margin-right:.6em}",
+      ".ev .src{color:#555;font-family:monospace;font-size:.9em;margin-right:.6em}",
+      ".ev-物証{border-color:#2a7;background:#f2faf6}",
+      ".ev-証言{border-color:#c92;background:#fdf8ee}",
+      ".ev-推理{border-color:#88a;background:#f5f5fa}",
+      "</style>\n";
 my $in = 0;
 while (my $l = <>) {
     if ($l =~ /^<<(.+)>>=\s*$/) {                       # chunk opens
@@ -16,6 +24,14 @@ while (my $l = <>) {
         my $e = esc($l);
         $e =~ s/&lt;&lt;(.+?)&gt;&gt;/<b class=cn>&lt;&lt;$1&gt;&gt;<\/b>/g;
         print $e; next;
+    }
+    # 証拠の行。平文の既定は「未証」で、この行があるところだけ裏付けが付く。
+    if ($l =~ /^\@証\s+(\S+)\s+(\S+)\s*(.*?)\s*$/) {
+        my ($kind, $src, $text) = ($1, $2, $3);
+        printf "<div class=\"ev ev-%s\"><span class=k>%s</span>" .
+               "<span class=src>%s</span>%s</div>\n",
+               esc($kind), esc($kind), esc($src), esc($text);
+        next;
     }
     print $l =~ /^\s*$/ ? "<p>\n" : $l;                  # prose passes through
 }

@@ -20,8 +20,12 @@ class Watcher extends RpcTarget {
   }
 
   [Symbol.dispose]() {
-    gadget.subscribe(new Watcher());
+    connect();
   }
 }
 
-display.textContent = await gadget.subscribe(new Watcher());
+async function connect() {
+  display.textContent = await gadget.subscribe(new Watcher());
+}
+
+await connect();

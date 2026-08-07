@@ -1,0 +1,85 @@
+#!/usr/bin/env perl
+# nwitness - .nw 文書の証拠を集計する。tangle（綯う）/ weave（織る）に対する第三の操作。
+#   usage: nwitness [-a] file.nw
+#          -a  証拠の付いている節も含めて全部出す（既定は未証の節だけ）
+#
+# 平文の既定は「未証」である。`@証` の行が置かれたところだけ裏付けが付く。
+# 緩く使うなら走らせなければよく、ストイックに使えば未証の節が TODO リストになる。
+#
+# 記法:
+#   @証 <種類> <典拠> <記述>
+#
+#   物証  実際に動かして観察した。典拠は確認した日付
+#   証言  出典が述べている。典拠はファイルと位置。**証人も誤りうるし、
+#         こちらが適用範囲を取り違えることもある**（HANDOFF.md §2.10 の実例）
+#   推理  コードを読んで導いた。典拠は読んだ範囲
+#
+# 強さは 物証 > 証言 > 推理 だが、物証も「観察」であって「解釈」ではない。
+# 何を見たかは確かでも、なぜそうなるかは別に立証が要る。
+
+use strict; use warnings;
+use utf8;
+binmode(STDOUT, ':encoding(UTF-8)');
+
+my $all = 0;
+if (@ARGV && $ARGV[0] eq '-a') { shift; $all = 1; }
+my $file = shift or die "usage: nwitness [-a] file.nw\n";
+open(my $fh, '<:encoding(UTF-8)', $file) or die "nwitness: $file: $!\n";
+
+my @sections;                      # { title, line, ev => [...] }
+my $cur = { title => '(冒頭)', line => 0, ev => [] };
+my $in_chunk = 0;
+my @misplaced;                     # チャンクの中に置かれた @証（コードに漏れる）
+
+while (my $l = <$fh>) {
+    my $n = $.;
+    if ($l =~ /^<<(.+)>>=\s*$/)          { $in_chunk = 1; next; }
+    if ($in_chunk && $l =~ /^\@\s*$/)    { $in_chunk = 0; next; }
+
+    if ($in_chunk) {
+        # チャンク内の @証 は ntangle に素通しされ、コードに混入する。
+        push @misplaced, { line => $n, text => $l } if $l =~ /^\s*\@証\b/;
+        next;
+    }
+
+    if ($l =~ /^##+\s+(.*?)\s*$/) {      # 節の切れ目
+        push @sections, $cur;
+        $cur = { title => $1, line => $n, ev => [] };
+        next;
+    }
+    if ($l =~ /^\@証\s+(\S+)\s+(\S+)\s*(.*?)\s*$/) {
+        push @{$cur->{ev}}, { kind => $1, src => $2, text => $3, line => $n };
+        next;
+    }
+}
+push @sections, $cur;
+close $fh;
+
+# ---- 集計 ----
+my %count;
+$count{$_->{kind}}++ for map { @{$_->{ev}} } @sections;
+my @unproven = grep { !@{$_->{ev}} && ($_->{title} ne '(冒頭)' || @sections == 1) } @sections;
+
+print "$file\n\n";
+
+for my $s (@sections) {
+    next unless $all || !@{$s->{ev}};
+    next if $s->{title} eq '(冒頭)' && !@{$s->{ev}} && !$all;
+    printf "  %-4s %s\n", @{$s->{ev}} ? "" : "未証", $s->{title};
+    for my $e (@{$s->{ev}}) {
+        printf "       %s  %s  %s\n", $e->{kind}, $e->{src}, $e->{text};
+    }
+}
+
+print "\n";
+printf "節 %d、うち未証 %d\n", scalar @sections, scalar @unproven;
+printf "証拠 物証 %d / 証言 %d / 推理 %d\n",
+       $count{'物証'} // 0, $count{'証言'} // 0, $count{'推理'} // 0;
+
+if (@misplaced) {
+    print "\n";
+    print "警告: チャンクの中に \@証 がある。ntangle は平文しか捨てないので、\n";
+    print "      これはコードに混入する。チャンクの外へ出すこと。\n";
+    printf "      %s:%d\n", $file, $_->{line} for @misplaced;
+    exit 1;
+}

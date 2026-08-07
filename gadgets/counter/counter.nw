@@ -50,6 +50,9 @@ constructor(ctx, env) {
 
 まだ一度も押されていなければ値は存在しないので、そのときは 0 とみなす。
 
+@証 物証 2026-08-07 コードを書き換えて再デプロイさせたあとも、リロードすれば数値は保たれていた
+@証 証言 agent.ts:468 ALWAYS store server state in Durable Object storage, not just in memory
+
 <<現在値を読む>>=
 
 async getCount() {
@@ -81,6 +84,9 @@ async increment(delta) {
 長く持ち続けるには `.dup()` で複製を取らなければならない。
 また、ブラウザが閉じられたことは `onRpcBroken` で通知されるので、
 そこで集合から取り除く。
+
+@証 物証 2026-08-07 二つのウィンドウで同時に開き、片方のボタンが即座にもう片方へ反映された
+@証 証言 agent.ts:431 it is important to call .dup() on the callback stub, in order to obtain a long-lived stub
 
 <<更新の購読を受け付ける>>=
 
@@ -119,6 +125,7 @@ HTML ファイルは存在せず、**画面は全部 JavaScript から DOM を�
 <<client.js>>=
 <<画面を組み立てる>>
 <<サーバからの更新を受け取る>>
+<<接続する>>
 <<最初の値を取ってきて表示する>>
 @
 
@@ -150,7 +157,7 @@ document.body.append(display, controls);
 サーバが `s.update(count)` を呼ぶと、ここの `update` が走る。
 
 `[Symbol.dispose]` は接続が切れたときに呼ばれる。
-再接続すればよいので、そのまま購読し直す。
+やることは接続しなおすことだけなので、次節の `connect` に任せる。
 
 <<サーバからの更新を受け取る>>=
 
@@ -160,18 +167,47 @@ class Watcher extends RpcTarget {
   }
 
   [Symbol.dispose]() {
-    gadget.subscribe(new Watcher());
+    connect();
   }
 }
 @
 
+## 接続と再接続
+
+購読を申し込むと現在値が返ってくるので、それを表示にする。
+`subscribe` が現在値を返す設計にしてあるおかげで、
+「購読する」と「現在値を取る」を一往復で済ませられる。
+
+この一往復を関数にまとめておくと、**起動時と再接続時で同じ処理を使える**。
+再接続のときも現在値を取り直せることが重要で、
+切れているあいだに他の誰かが押していれば、画面の数字はもう古い。
+
+**ここでは再接続を自前で作らない。** 一度作って失敗している。
+`gadget` への呼び出しは、失敗しても例外を投げずに待ち続けるので、
+`try` / `catch` では何も捕まらない。書いたリトライは一度も実行されなかった。
+
+待つ理由は、`gadget` が親フレーム側の Proxy で、
+再接続中の呼び出しを保留する作りになっているからである。
+保留を解除するのも、駄目なら iframe を再読み込みするのも、
+プラットフォームの側が既にやっている。**こちらで重ねて実装するものではない。**
+
+<<接続する>>=
+
+async function connect() {
+  display.textContent = await gadget.subscribe(new Watcher());
+}
+@
+
+@証 物証 2026-08-07 リトライ版を実機で試したところ、数字もボタンも固まりエラーも出なかった
+@証 証言 agent.ts:460 calls made while its replacement is being acquired will wait
+@証 推理 GadgetUI.tsx:355-365 iframe から見える gadget は親フレームの Proxy で、保留中は pending.promise を待つ
+@証 推理 GadgetUI.tsx:218-238 プラットフォーム側は Promise.race で 5 秒待ち、超えたら iframe を再読み込みする
+
 ## 起動
 
-購読を申し込むと現在値が返ってくるので、それを最初の表示にする。
-`subscribe` が現在値を返す設計にしてあるおかげで、
-「購読する」と「初期値を取る」を一往復で済ませられる。
+あとは最初の一回を呼ぶだけである。
 
 <<最初の値を取ってきて表示する>>=
 
-display.textContent = await gadget.subscribe(new Watcher());
+await connect();
 @
