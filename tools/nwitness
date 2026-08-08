@@ -21,9 +21,14 @@ use strict; use warnings;
 use utf8;
 binmode(STDOUT, ':encoding(UTF-8)');
 
-my $all = 0;
-if (@ARGV && $ARGV[0] eq '-a') { shift; $all = 1; }
-my $file = shift or die "usage: nwitness [-a] file.nw\n";
+my ($all, $verify) = (0, 0);
+while (@ARGV && $ARGV[0] =~ /^-/) {
+    my $o = shift;
+    if    ($o eq '-a') { $all = 1 }
+    elsif ($o eq '-v') { $verify = 1 }
+    else  { die "nwitness: 不明なオプション $o\n" }
+}
+my $file = shift or die "usage: nwitness [-a] [-v] file.nw\n";
 open(my $fh, '<:encoding(UTF-8)', $file) or die "nwitness: $file: $!\n";
 
 my @sections;                      # { title, line, ev => [...] }
@@ -55,6 +60,87 @@ while (my $l = <$fh>) {
 push @sections, $cur;
 close $fh;
 
+# ---- 裏取り（-v）----
+#
+# 証言は「上流がこう言っている」という主張なので、上流が変われば古びる。
+# 引用文が本当にその行にあるかを突き合わせる。これが弱点3（証拠の風化）への対処。
+#
+# 種類ごとに検査できることが違う:
+#   証言  引用文がその行に実在するか
+#   推理  本文はこちらの推論なので、行が実在するかだけ
+#   物証  典拠は日付。突き合わせる相手がない
+my $REF = 'reference/cloudflare-os';
+my @stale;
+if ($verify) {
+    if (!-d $REF) {
+        die "nwitness: $REF がない。裏取りには参照元が要る（setup.sh を先に）\n";
+    }
+    my %index = build_index($REF);
+    for my $s (@sections) {
+        for my $e (@{$s->{ev}}) {
+            next if $e->{kind} eq '物証';
+            my ($name, $from, $to) = $e->{src} =~ /^(\S+?):(\d+)(?:-(\d+))?$/ or next;
+            $to //= $from;
+
+            my $paths = $index{$name};
+            if (!$paths) {
+                push @stale, [$e, "参照元に $name が見つからない"]; next;
+            }
+            if (@$paths > 1) {
+                push @stale, [$e, "$name が複数ある: " . join(', ', @$paths)]; next;
+            }
+            my @lines = read_lines($paths->[0]);
+            if ($to > @lines) {
+                push @stale, [$e, "$name は " . scalar(@lines) . " 行しかない"]; next;
+            }
+            next if $e->{kind} eq '推理';   # 行の存在だけ見れば足りる
+
+            # 証言。引用は行の一部でよい。エスケープと空白の揺れは吸収する
+            # （TS のテンプレートリテラル内は ` が \` になっているなど）。
+            my $hay = norm(join ' ', @lines[$from-1 .. $to-1]);
+            my $needle = norm($e->{text});
+            push @stale, [$e, "引用が $name:$from に見当たらない"]
+                if length $needle && index($hay, $needle) < 0;
+        }
+    }
+}
+
+sub norm {                     # 突き合わせ用の正規化
+    my $s = shift // '';
+    $s =~ s/\\//g;             # バックスラッシュを落とす
+    $s =~ s/`//g;              # バッククォートも。出典側は TS のテンプレート
+                               # リテラル内で \` になっており、こちらは
+                               # Markdown の記法として書く。どちらも飾りなので
+                               # 落として中身だけを比べる
+    $s =~ s/\s+/ /g;           # 空白の連なりを 1 個に
+    $s =~ s/^ | $//g;
+    return $s;
+}
+
+sub read_lines {
+    open(my $h, '<:encoding(UTF-8)', shift) or return ();
+    my @l = <$h>; close $h; return @l;
+}
+
+sub build_index {              # ファイル名 -> パス（node_modules と dist は除く）
+    my $root = shift;
+    my %ix;
+    my @stack = ($root);
+    while (my $dir = pop @stack) {
+        opendir(my $dh, $dir) or next;
+        for my $n (readdir $dh) {
+            next if $n eq '.' || $n eq '..';
+            next if $n eq 'node_modules' || $n eq 'dist' || $n eq '.git'
+                 || $n eq '.wrangler' || $n eq 'generated';
+            my $p = "$dir/$n";
+            if (-d $p)    { push @stack, $p }
+            elsif (-f $p) { push @{$ix{$n}}, $p }
+        }
+        closedir $dh;
+    }
+    return %ix;
+}
+
 # ---- 集計 ----
 my %count;
 $count{$_->{kind}}++ for map { @{$_->{ev}} } @sections;
@@ -76,10 +162,26 @@ printf "節 %d、うち未証 %d\n", scalar @sections, scalar @unproven;
 printf "証拠 物証 %d / 証言 %d / 推理 %d\n",
        $count{'物証'} // 0, $count{'証言'} // 0, $count{'推理'} // 0;
 
+if ($verify) {
+    my $checked = grep { $_->{kind} ne '物証' } map { @{$_->{ev}} } @sections;
+    printf "裏取り %d 件、うち要確認 %d\n", $checked, scalar @stale;
+}
+
+if (@stale) {
+    print "\n";
+    print "要確認: 典拠が合わない。上流が変わったか、引用が不正確か。\n";
+    for my $s (@stale) {
+        my ($e, $why) = @$s;
+        printf "      %s:%d  %s %s\n", $file, $e->{line}, $e->{kind}, $e->{src};
+        printf "        %s\n", $why;
+    }
+}
+
 if (@misplaced) {
     print "\n";
     print "警告: チャンクの中に \@証 がある。ntangle は平文しか捨てないので、\n";
     print "      これはコードに混入する。チャンクの外へ出すこと。\n";
     printf "      %s:%d\n", $file, $_->{line} for @misplaced;
-    exit 1;
 }
+
+exit 1 if @misplaced || @stale;

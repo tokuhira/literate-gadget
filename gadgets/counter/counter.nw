@@ -187,7 +187,7 @@ document.body.append(display, controls);
 再び渡すより素直だと考えたためで、**どちらが正しいかは確かめていない。**
 
 @証 証言 agent.ts:460 other capabilities passed over RPC in either direction are disposed on disconnect, and must be re-acquired
-@証 証言 agent.ts:452 公式の例にも [Symbol.dispose] があり "Connection lost. Resubscribe using new connection." と注記されている
+@証 証言 agent.ts:452 Connection lost. Resubscribe using new connection.
 
 <<サーバからの更新を受け取る>>=
 

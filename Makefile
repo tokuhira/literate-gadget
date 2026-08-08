@@ -23,8 +23,11 @@ weave:
 
 # 証拠の集計。既定は未証の節だけを出す。ALL=1 で全部出す。
 # 平文の既定は「未証」なので、走らせなければ何も強制されない。
+#
+# VERIFY=1 で証言の裏取りもする（reference/ が要る）。引用が本当にその行に
+# あるかを突き合わせるので、上流が変われば落ちる。証拠は風化する。
 witness:
-	@for f in $(NW); do $(WITNESS) $(if $(ALL),-a) $$f; done
+	@for f in $(NW); do $(WITNESS) $(if $(ALL),-a) $(if $(VERIFY),-v) $$f; done
 
 check:
 	@if ! command -v node >/dev/null 2>&1; then \
