@@ -177,8 +177,9 @@ origin    https://github.com/tokuhira/cloudflare-os.git   (fetch/push)
 upstream  https://github.com/cloudflare/cloudflare-os.git (fetch のみ)
 ```
 
-なお clone は `--depth 1` の shallow なので、**上流追従の際は先に
-`git fetch --unshallow upstream` が要る**（未実施・未検証）。
+clone は `--depth 1` の shallow である。当初「上流追従には `--unshallow` が
+要る」と書いていたが、**実際にやってみると `--depth=50` で足りた**（§2.12）。
+全履歴を落とす必要はない。
 
 #### メモリ不足で落ちる問題と、その回避
 
@@ -430,6 +431,59 @@ Gadget の画面には **App / Code / Connections** のタブがある。
 だからリロードすれば数字は保たれたまま復帰する。被害は「一度リロードが要る」
 だけでデータは失われない。プラットフォームが "Clients may frequently reload" と
 割り切っているのは、この設計だからだと考えられる（この因果は推測）。
+
+### 2.12 上流に追従した — 手順が確立（2026-08-09）
+
+cloudflare-os の上流が動き、フォークの `main` に取り込まれていたので、
+`literate-gadget-minimal` を載せ替えた。**衝突ゼロで完了し、起動も確認した。**
+
+#### 手順（次回もこれでよい）
+
+```sh
+cd reference/cloudflare-os
+git fetch --depth=50 origin main          # --unshallow は不要だった
+git merge-base --is-ancestor <土台> origin/main   # 分岐していないか確認
+git tag -f before-sync-<日付> HEAD        # 戻り先を確保
+git rebase origin/main
+make witness VERIFY=1                     # ← 証拠が古びていないか（リポジトリ側で）
+pnpm run-local                            # ← 起動するか
+```
+
+`--force-with-lease` で push するときは、**先にリモートを fetch しておくこと**。
+取得していないと「stale info」で拒否される。これは安全装置が正しく働いた形で、
+`--force-with-lease=<branch>:<期待するコミット>` の形で明示すると確実。
+
+#### 今回の確認結果
+
+| 観点 | 結果 |
+|---|---|
+| 履歴の分岐 | なし。旧土台 `0eaec6c` は `origin/main` の祖先 |
+| 退避した 15 ファイルへの上流の変更 | なし（衝突ゼロ） |
+| gatekeeper 数 | 16 → 16。**watcher が増えない**＝ OOM リスクの構造は不変 |
+| 間引きの維持 | 退避 15 / 検出 1 |
+| 証拠の風化 | なし。裏取り 14 件通過 |
+| 起動 | 成功。HTTP 200、20ms、エラー 0 |
+| `main` との差分 | リネーム 15 件のみ（0 insertions, 0 deletions） |
+
+上流の中身は `#56` Backend observability and hygiene for Durable Object resets、
+`#47` ambient gatekeeper の事前インストール基盤、`#49`/`#52` GitHub gatekeeper の
+修正。`workshop-backend/wrangler.jsonc` にトレース設定が入り、コメントに
+**「ベータ期間中は無料だが 2026-10-01 から Logs quota に課金される」**とある。
+ローカル実行には影響しないが、公開運用するなら sampling rate を見直す話になる。
+
+#### 裏取りは通ったが、弱い検査だった
+
+`agent.ts` も `GadgetUI.tsx` も**今回は無変更**だったので、
+「変わっていないものは変わっていない」と確認しただけである。
+道具が本当に試されるのは、典拠にしているファイルが動いたときになる。
+
+#### メモリの余裕が減った
+
+追従後、空きが **1.3〜1.5Gi → 745Mi** になった。主因は
+`vite build --watch`（gatekeeper-context のもの）が **約 1GB** 占めていること。
+これは以前から存在する唯一の watcher なので、**更新が原因とは断定できない**
+（測定した時点の違いかもしれない）。動作自体は正常。
+次に `pnpm run-local` を使うときは、他のプロセスを整理してからのほうが安全。
 
 ---
 
