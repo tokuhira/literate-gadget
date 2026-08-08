@@ -114,13 +114,19 @@ async subscribe(callback) {
 集合を舐めて全員に伝えるだけ。
 途中で切れた接続があっても他の配信を止めたくないので、失敗は握り潰す。
 <p>
-<strong>この <code>catch</code> が実際に働いたところは見ていない。</strong> 切れた接続は
-<code>onRpcBroken</code> が集合から取り除くので、<code>update</code> の呼び出しが失敗するのは
-「切断が起きてから取り除かれるまでの隙間」に限られる。
-その隙間を狙って観察する方法をまだ思いついていない。
+<strong>この <code>catch</code> が到達可能であることは確かめた。</strong> <code>onRpcBroken</code> を外した
+実験用の Gadget を作り、切れた購読者を集合に残したまま配信したところ、
+配信のたびにちょうど 1 回ずつ失敗が記録された。到達不能な死んだコードではない。
 <p>
-握り潰すこと自体は保険として妥当だと考えているが、
-<strong>それは推測であって、確かめた事実ではない。</strong>
+<strong>ただし本番の隙間で発火するところは見ていない。</strong> 本番では
+<code>onRpcBroken</code> が購読者を取り除くので、<code>update</code> が失敗するのは
+「切断が起きてから取り除かれるまでの隙間」に限られる。
+その隙間を狙って観察する方法はまだない。
+<p>
+握り潰す判断は保険として妥当だと考えているが、
+<strong>保険が要る状況が実際に起きるかどうかは、まだ別の問題である。</strong>
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-09</span>onRpcBroken を外した実験用 Gadget で、切れた購読者を集合に残したまま 3 回配信したところ失敗が 0 から 3 に増えた</div>
 <p>
 <pre><b class=cn>&lt;&lt;全員に配信する&gt;&gt;=</b>
 
