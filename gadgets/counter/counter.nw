@@ -17,6 +17,10 @@ Gadget は必ず二つのファイルからなる。`server.js` はサーバ側�
 
 クラス名は必ず `Gadget` でなければならない。
 
+@証 証言 agent.ts:398 The class must be exported under the name `Gadget`
+@証 証言 agent.ts:398 there is no need to export a separate fetch handler; the Gadgets platform automatically takes care of routing
+@証 物証 2026-08-07 この形のまま実機で動いた
+
 <<server.js>>=
 import { DurableObject } from "cloudflare:workers";
 
@@ -34,6 +38,9 @@ export class Gadget extends DurableObject {
 「誰かが押したら全員の画面が更新される」を実現するために、
 接続中のブラウザから預かったコールバックを保持しておく。
 これはメモリ上の集合でよい。接続が切れれば意味を失う情報だからである。
+
+@証 証言 agent.ts:468 Memory is OK to use for caching
+@証 証言 agent.ts:460 other capabilities passed over RPC in either direction are disposed on disconnect
 
 <<購読者の集合を用意する>>=
 constructor(ctx, env) {
@@ -64,6 +71,8 @@ async getCount() {
 
 読んで、足して、書き戻して、全員に知らせる。
 `delta` には `+1` か `-1` が来る。
+
+@証 物証 2026-08-07 ボタンで増減し、もう一方のウィンドウへ即座に伝わった
 
 <<値を増減する>>=
 
@@ -103,6 +112,14 @@ async subscribe(callback) {
 集合を舐めて全員に伝えるだけ。
 途中で切れた接続があっても他の配信を止めたくないので、失敗は握り潰す。
 
+**この `catch` が実際に働いたところは見ていない。** 切れた接続は
+`onRpcBroken` が集合から取り除くので、`update` の呼び出しが失敗するのは
+「切断が起きてから取り除かれるまでの隙間」に限られる。
+その隙間を狙って観察する方法をまだ思いついていない。
+
+握り潰すこと自体は保険として妥当だと考えているが、
+**それは推測であって、確かめた事実ではない。**
+
 <<全員に配信する>>=
 
 broadcast(count) {
@@ -122,6 +139,10 @@ HTML ファイルは存在せず、**画面は全部 JavaScript から DOM を�
 グローバル変数 `gadget` が最初から用意されていて、これがサーバへの RPC スタブになる。
 `gadget.increment(1)` と書けば、サーバ側の `increment` が呼ばれる。
 
+@証 証言 agent.ts:410 The client context is initialized with a special global variable called `gadget`
+@証 証言 agent.ts:417 there is no index.html. Instead, client.js must build the entire UI using JavaScript code
+@証 推理 GadgetUI.tsx:355-365 その `gadget` の実体は親フレーム側の Proxy で、iframe とは MessagePort で繋がっている
+
 <<client.js>>=
 <<画面を組み立てる>>
 <<サーバからの更新を受け取る>>
@@ -132,6 +153,8 @@ HTML ファイルは存在せず、**画面は全部 JavaScript から DOM を�
 ## 画面
 
 数字を一つと、ボタンを二つ。それだけである。
+
+@証 物証 2026-08-07 この通りに描画された（数字とボタン二つ）
 
 <<画面を組み立てる>>=
 const display = document.createElement("div");
@@ -158,6 +181,13 @@ document.body.append(display, controls);
 
 `[Symbol.dispose]` は接続が切れたときに呼ばれる。
 やることは接続しなおすことだけなので、次節の `connect` に任せる。
+
+なお公式の例は同じオブジェクトを渡し直す（`gadget.subscribe(this)`）が、
+ここでは `new Watcher()` を作り直している。破棄されたオブジェクトを
+再び渡すより素直だと考えたためで、**どちらが正しいかは確かめていない。**
+
+@証 証言 agent.ts:460 other capabilities passed over RPC in either direction are disposed on disconnect, and must be re-acquired
+@証 証言 agent.ts:452 公式の例にも [Symbol.dispose] があり "Connection lost. Resubscribe using new connection." と注記されている
 
 <<サーバからの更新を受け取る>>=
 
@@ -206,6 +236,8 @@ async function connect() {
 ## 起動
 
 あとは最初の一回を呼ぶだけである。
+
+@証 物証 2026-08-07 開いた直後に現在値が表示された
 
 <<最初の値を取ってきて表示する>>=
 

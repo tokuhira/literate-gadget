@@ -1,23 +1,27 @@
 <!doctype html><meta charset=utf-8>
-<style>body{max-width:44em;margin:2em auto;font-family:serif;line-height:1.7}pre{background:#f4f4f4;padding:.8em;border-left:3px solid #888;font-family:monospace}b.cn{color:#a00}.ev{margin:.6em 0;padding:.4em .8em;border-left:4px solid;font-size:.9em}.ev .k{font-weight:bold;margin-right:.6em}.ev .src{color:#555;font-family:monospace;font-size:.9em;margin-right:.6em}.ev-物証{border-color:#2a7;background:#f2faf6}.ev-証言{border-color:#c92;background:#fdf8ee}.ev-推理{border-color:#88a;background:#f5f5fa}</style>
-# 共有カウンタ Gadget
+<style>body{max-width:44em;margin:2em auto;font-family:serif;line-height:1.7}h1,h2,h3{line-height:1.3;margin:1.8em 0 .6em}h1{border-bottom:2px solid #ccc;padding-bottom:.2em}h2{border-bottom:1px solid #ddd;padding-bottom:.15em}hr{border:0;border-top:1px solid #ddd;margin:2.4em 0}code{background:#f0f0f0;padding:.1em .3em;border-radius:3px;font-family:monospace;font-size:.9em}pre{background:#f4f4f4;padding:.8em;border-left:3px solid #888;font-family:monospace}pre code{background:none;padding:0}b.cn{color:#a00}.ev{margin:.6em 0;padding:.4em .8em;border-left:4px solid;font-size:.9em}.ev .k{font-weight:bold;margin-right:.6em}.ev .src{color:#555;font-family:monospace;font-size:.9em;margin-right:.6em}.ev-物証{border-color:#2a7;background:#f2faf6}.ev-証言{border-color:#c92;background:#fdf8ee}.ev-推理{border-color:#88a;background:#f5f5fa}</style>
+<h1>共有カウンタ Gadget</h1>
 <p>
 これは Cloudflare OS の Gadget を文芸的プログラミングで書いた例である。
 複数のブラウザから同じ数値を増減でき、誰かが押したら全員の画面が即座に更新される。
 <p>
-Gadget は必ず二つのファイルからなる。`server.js` はサーバ側、`client.js`
-はブラウザ側で、その二つが `<<...>>` の記法で一つの文書から取り出される。
+Gadget は必ず二つのファイルからなる。<code>server.js</code> はサーバ側、<code>client.js</code>
+はブラウザ側で、その二つが <code>&lt;&lt;...&gt;&gt;</code> の記法で一つの文書から取り出される。
 以下では先に全体の形を述べ、細部はあとまわしにする。
 <p>
----
+<hr>
 <p>
-## サーバ側の全体像
+<h2>サーバ側の全体像</h2>
 <p>
 サーバは Durable Object という Cloudflare の仕組みで、
-**一つの Gadget インスタンスにつき一つだけ存在するサーバオブジェクト**である。
+<strong>一つの Gadget インスタンスにつき一つだけ存在するサーバオブジェクト</strong>である。
 状態を持ち、複数のブラウザからの接続を同時に相手にする。
 <p>
-クラス名は必ず `Gadget` でなければならない。
+クラス名は必ず <code>Gadget</code> でなければならない。
+<p>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:398</span>The class must be exported under the name <code>Gadget</code></div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:398</span>there is no need to export a separate fetch handler; the Gadgets platform automatically takes care of routing</div>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-07</span>この形のまま実機で動いた</div>
 <p>
 <pre><b class=cn>&lt;&lt;server.js&gt;&gt;=</b>
 import { DurableObject } from "cloudflare:workers";
@@ -31,11 +35,14 @@ export class Gadget extends DurableObject {
 }
 </pre>
 <p>
-## 購読者の集合
+<h2>購読者の集合</h2>
 <p>
 「誰かが押したら全員の画面が更新される」を実現するために、
 接続中のブラウザから預かったコールバックを保持しておく。
 これはメモリ上の集合でよい。接続が切れれば意味を失う情報だからである。
+<p>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:468</span>Memory is OK to use for caching</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:460</span>other capabilities passed over RPC in either direction are disposed on disconnect</div>
 <p>
 <pre><b class=cn>&lt;&lt;購読者の集合を用意する&gt;&gt;=</b>
 constructor(ctx, env) {
@@ -44,9 +51,9 @@ constructor(ctx, env) {
 }
 </pre>
 <p>
-## 現在値
+<h2>現在値</h2>
 <p>
-数値そのものは**メモリではなく Durable Object のストレージに置く**。
+数値そのものは<strong>メモリではなく Durable Object のストレージに置く</strong>。
 サーバはいつ再起動してもよいことになっており、
 メモリに置いた値は再起動で消えてしまうからである。
 <p>
@@ -62,10 +69,12 @@ async getCount() {
 }
 </pre>
 <p>
-## 増減
+<h2>増減</h2>
 <p>
 読んで、足して、書き戻して、全員に知らせる。
-`delta` には `+1` か `-1` が来る。
+<code>delta</code> には <code>+1</code> か <code>-1</code> が来る。
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-07</span>ボタンで増減し、もう一方のウィンドウへ即座に伝わった</div>
 <p>
 <pre><b class=cn>&lt;&lt;値を増減する&gt;&gt;=</b>
 
@@ -77,14 +86,14 @@ async increment(delta) {
 }
 </pre>
 <p>
-## 購読
+<h2>購読</h2>
 <p>
 ブラウザは自分のコールバックをサーバに渡す。ここが Cap'n Web の面白いところで、
-**関数そのものを RPC で渡せる**。受け取った側には呼び出し可能なスタブが届く。
+<strong>関数そのものを RPC で渡せる</strong>。受け取った側には呼び出し可能なスタブが届く。
 <p>
 ただし渡ってきたスタブは、このメソッドを抜けた時点で自動的に破棄される。
-長く持ち続けるには `.dup()` で複製を取らなければならない。
-また、ブラウザが閉じられたことは `onRpcBroken` で通知されるので、
+長く持ち続けるには <code>.dup()</code> で複製を取らなければならない。
+また、ブラウザが閉じられたことは <code>onRpcBroken</code> で通知されるので、
 そこで集合から取り除く。
 <p>
 <div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-07</span>二つのウィンドウで同時に開き、片方のボタンが即座にもう片方へ反映された</div>
@@ -100,10 +109,18 @@ async subscribe(callback) {
 }
 </pre>
 <p>
-## 配信
+<h2>配信</h2>
 <p>
 集合を舐めて全員に伝えるだけ。
 途中で切れた接続があっても他の配信を止めたくないので、失敗は握り潰す。
+<p>
+<strong>この <code>catch</code> が実際に働いたところは見ていない。</strong> 切れた接続は
+<code>onRpcBroken</code> が集合から取り除くので、<code>update</code> の呼び出しが失敗するのは
+「切断が起きてから取り除かれるまでの隙間」に限られる。
+その隙間を狙って観察する方法をまだ思いついていない。
+<p>
+握り潰すこと自体は保険として妥当だと考えているが、
+<strong>それは推測であって、確かめた事実ではない。</strong>
 <p>
 <pre><b class=cn>&lt;&lt;全員に配信する&gt;&gt;=</b>
 
@@ -114,15 +131,19 @@ broadcast(count) {
 }
 </pre>
 <p>
----
+<hr>
 <p>
-## ブラウザ側の全体像
+<h2>ブラウザ側の全体像</h2>
 <p>
-`client.js` はサンドボックス化された iframe の中で動く。
-HTML ファイルは存在せず、**画面は全部 JavaScript から DOM を組み立てて作る**。
+<code>client.js</code> はサンドボックス化された iframe の中で動く。
+HTML ファイルは存在せず、<strong>画面は全部 JavaScript から DOM を組み立てて作る</strong>。
 <p>
-グローバル変数 `gadget` が最初から用意されていて、これがサーバへの RPC スタブになる。
-`gadget.increment(1)` と書けば、サーバ側の `increment` が呼ばれる。
+グローバル変数 <code>gadget</code> が最初から用意されていて、これがサーバへの RPC スタブになる。
+<code>gadget.increment(1)</code> と書けば、サーバ側の <code>increment</code> が呼ばれる。
+<p>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:410</span>The client context is initialized with a special global variable called <code>gadget</code></div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:417</span>there is no index.html. Instead, client.js must build the entire UI using JavaScript code</div>
+<div class="ev ev-推理"><span class=k>推理</span><span class=src>GadgetUI.tsx:355-365</span>その <code>gadget</code> の実体は親フレーム側の Proxy で、iframe とは MessagePort で繋がっている</div>
 <p>
 <pre><b class=cn>&lt;&lt;client.js&gt;&gt;=</b>
 <b class=cn>&lt;&lt;画面を組み立てる&gt;&gt;</b>
@@ -131,9 +152,11 @@ HTML ファイルは存在せず、**画面は全部 JavaScript から DOM を�
 <b class=cn>&lt;&lt;最初の値を取ってきて表示する&gt;&gt;</b>
 </pre>
 <p>
-## 画面
+<h2>画面</h2>
 <p>
 数字を一つと、ボタンを二つ。それだけである。
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-07</span>この通りに描画された（数字とボタン二つ）</div>
 <p>
 <pre><b class=cn>&lt;&lt;画面を組み立てる&gt;&gt;=</b>
 const display = document.createElement("div");
@@ -153,13 +176,20 @@ controls.append(button("-", -1), button("+", +1));
 document.body.append(display, controls);
 </pre>
 <p>
-## 更新の受け取り
+<h2>更新の受け取り</h2>
 <p>
-サーバに渡すコールバックは `RpcTarget` を継承したオブジェクトとして作る。
-サーバが `s.update(count)` を呼ぶと、ここの `update` が走る。
+サーバに渡すコールバックは <code>RpcTarget</code> を継承したオブジェクトとして作る。
+サーバが <code>s.update(count)</code> を呼ぶと、ここの <code>update</code> が走る。
 <p>
-`[Symbol.dispose]` は接続が切れたときに呼ばれる。
-やることは接続しなおすことだけなので、次節の `connect` に任せる。
+<code>[Symbol.dispose]</code> は接続が切れたときに呼ばれる。
+やることは接続しなおすことだけなので、次節の <code>connect</code> に任せる。
+<p>
+なお公式の例は同じオブジェクトを渡し直す（<code>gadget.subscribe(this)</code>）が、
+ここでは <code>new Watcher()</code> を作り直している。破棄されたオブジェクトを
+再び渡すより素直だと考えたためで、<strong>どちらが正しいかは確かめていない。</strong>
+<p>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:460</span>other capabilities passed over RPC in either direction are disposed on disconnect, and must be re-acquired</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:452</span>公式の例にも [Symbol.dispose] があり "Connection lost. Resubscribe using new connection." と注記されている</div>
 <p>
 <pre><b class=cn>&lt;&lt;サーバからの更新を受け取る&gt;&gt;=</b>
 
@@ -174,24 +204,24 @@ class Watcher extends RpcTarget {
 }
 </pre>
 <p>
-## 接続と再接続
+<h2>接続と再接続</h2>
 <p>
 購読を申し込むと現在値が返ってくるので、それを表示にする。
-`subscribe` が現在値を返す設計にしてあるおかげで、
+<code>subscribe</code> が現在値を返す設計にしてあるおかげで、
 「購読する」と「現在値を取る」を一往復で済ませられる。
 <p>
-この一往復を関数にまとめておくと、**起動時と再接続時で同じ処理を使える**。
+この一往復を関数にまとめておくと、<strong>起動時と再接続時で同じ処理を使える</strong>。
 再接続のときも現在値を取り直せることが重要で、
 切れているあいだに他の誰かが押していれば、画面の数字はもう古い。
 <p>
-**ここでは再接続を自前で作らない。** 一度作って失敗している。
-`gadget` への呼び出しは、失敗しても例外を投げずに待ち続けるので、
-`try` / `catch` では何も捕まらない。書いたリトライは一度も実行されなかった。
+<strong>ここでは再接続を自前で作らない。</strong> 一度作って失敗している。
+<code>gadget</code> への呼び出しは、失敗しても例外を投げずに待ち続けるので、
+<code>try</code> / <code>catch</code> では何も捕まらない。書いたリトライは一度も実行されなかった。
 <p>
-待つ理由は、`gadget` が親フレーム側の Proxy で、
+待つ理由は、<code>gadget</code> が親フレーム側の Proxy で、
 再接続中の呼び出しを保留する作りになっているからである。
 保留を解除するのも、駄目なら iframe を再読み込みするのも、
-プラットフォームの側が既にやっている。**こちらで重ねて実装するものではない。**
+プラットフォームの側が既にやっている。<strong>こちらで重ねて実装するものではない。</strong>
 <p>
 <pre><b class=cn>&lt;&lt;接続する&gt;&gt;=</b>
 
@@ -205,9 +235,11 @@ async function connect() {
 <div class="ev ev-推理"><span class=k>推理</span><span class=src>GadgetUI.tsx:355-365</span>iframe から見える gadget は親フレームの Proxy で、保留中は pending.promise を待つ</div>
 <div class="ev ev-推理"><span class=k>推理</span><span class=src>GadgetUI.tsx:218-238</span>プラットフォーム側は Promise.race で 5 秒待ち、超えたら iframe を再読み込みする</div>
 <p>
-## 起動
+<h2>起動</h2>
 <p>
 あとは最初の一回を呼ぶだけである。
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-07</span>開いた直後に現在値が表示された</div>
 <p>
 <pre><b class=cn>&lt;&lt;最初の値を取ってきて表示する&gt;&gt;=</b>
 

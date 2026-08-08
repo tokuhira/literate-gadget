@@ -4,9 +4,16 @@
 use strict; use warnings;
 print "<!doctype html><meta charset=utf-8>\n";
 print "<style>body{max-width:44em;margin:2em auto;font-family:serif;line-height:1.7}",
+      "h1,h2,h3{line-height:1.3;margin:1.8em 0 .6em}",
+      "h1{border-bottom:2px solid #ccc;padding-bottom:.2em}",
+      "h2{border-bottom:1px solid #ddd;padding-bottom:.15em}",
+      "hr{border:0;border-top:1px solid #ddd;margin:2.4em 0}",
+      "code{background:#f0f0f0;padding:.1em .3em;border-radius:3px;",
+      "font-family:monospace;font-size:.9em}",
       "pre{background:#f4f4f4;padding:.8em;border-left:3px solid #888;font-family:monospace}",
+      "pre code{background:none;padding:0}",
       "b.cn{color:#a00}",
-      # 証拠。種類ごとに色を変え、強さの差が一目で分かるようにする。
+      # Evidence. One colour per kind, so the relative strength shows at a glance.
       ".ev{margin:.6em 0;padding:.4em .8em;border-left:4px solid;font-size:.9em}",
       ".ev .k{font-weight:bold;margin-right:.6em}",
       ".ev .src{color:#555;font-family:monospace;font-size:.9em;margin-right:.6em}",
@@ -25,14 +32,26 @@ while (my $l = <>) {
         $e =~ s/&lt;&lt;(.+?)&gt;&gt;/<b class=cn>&lt;&lt;$1&gt;&gt;<\/b>/g;
         print $e; next;
     }
-    # 証拠の行。平文の既定は「未証」で、この行があるところだけ裏付けが付く。
+    # Evidence. Prose defaults to "unproven"; only these lines carry backing.
     if ($l =~ /^\@証\s+(\S+)\s+(\S+)\s*(.*?)\s*$/) {
-        my ($kind, $src, $text) = ($1, $2, $3);
         printf "<div class=\"ev ev-%s\"><span class=k>%s</span>" .
                "<span class=src>%s</span>%s</div>\n",
-               esc($kind), esc($kind), esc($src), esc($text);
+               esc($1), esc($1), esc($2), inline($3);
         next;
     }
-    print $l =~ /^\s*$/ ? "<p>\n" : $l;                  # prose passes through
+    # Prose. Only the markdown this document actually uses is interpreted.
+    if ($l =~ /^(#{1,6})\s+(.*?)\s*$/) {                # heading
+        my $lv = length $1;
+        printf "<h%d>%s</h%d>\n", $lv, inline($2), $lv; next;
+    }
+    if ($l =~ /^---+\s*$/) { print "<hr>\n"; next; }     # rule
+    print $l =~ /^\s*$/ ? "<p>\n" : inline($l);
+}
+# Escape first, then mark up: anything we emit below must survive as tags.
+sub inline {
+    my $s = esc(shift);
+    $s =~ s/`([^`]+)`/<code>$1<\/code>/g;
+    $s =~ s/\*\*(.+?)\*\*/<strong>$1<\/strong>/g;
+    return $s;
 }
 sub esc { my $s = shift; $s =~ s/&/&amp;/g; $s =~ s/</&lt;/g; $s =~ s/>/&gt;/g; $s }

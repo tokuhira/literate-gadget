@@ -1,8 +1,9 @@
 NW      := $(wildcard gadgets/*/*.nw)
 TANGLE  := ./tools/ntangle
 WEAVE   := ./tools/nweave
+WITNESS := ./tools/nwitness
 
-.PHONY: all check clean
+.PHONY: all check clean witness
 
 all: tangle weave
 
@@ -19,6 +20,11 @@ weave:
 	  o=$${f%.nw}.html; \
 	  $(WEAVE) $$f > $$o && echo "weave   $$f -> $$o"; \
 	done
+
+# 証拠の集計。既定は未証の節だけを出す。ALL=1 で全部出す。
+# 平文の既定は「未証」なので、走らせなければ何も強制されない。
+witness:
+	@for f in $(NW); do $(WITNESS) $(if $(ALL),-a) $$f; done
 
 check:
 	@if ! command -v node >/dev/null 2>&1; then \
