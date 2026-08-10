@@ -1,4 +1,5 @@
 NW      := $(wildcard gadgets/*/*.nw)
+MD      := HANDOFF.md
 TANGLE  := ./tools/ntangle
 WEAVE   := ./tools/nweave
 WITNESS := ./tools/nwitness
@@ -26,8 +27,13 @@ weave:
 #
 # VERIFY=1 で証言の裏取りもする（reference/ が要る）。引用が本当にその行に
 # あるかを突き合わせるので、上流が変われば落ちる。証拠は風化する。
+#
+# VERIFY=1 のときは Markdown の引用も突き合わせる。2026-08-10 に実際に
+# 腐ったのは .nw ではなく HANDOFF.md のほうだったので、守備範囲を揃えた
+# （HANDOFF.md §2.15）。
 witness:
 	@for f in $(NW); do $(WITNESS) $(if $(ALL),-a) $(if $(VERIFY),-v) $$f; done
+	@$(if $(VERIFY),for f in $(MD); do $(WITNESS) $$f; done,:)
 
 check:
 	@if ! command -v node >/dev/null 2>&1; then \

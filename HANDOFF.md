@@ -129,7 +129,7 @@ TS が要るのは Workshop 本体（TSX / Vite / TanStack Router）のみ。
   **訂正（2026-08-10、§2.14）**: 適用されるのは、**その action より前に
   人手を要する保留がない場合に限る**。ドレイナは id の昇順に見て、
   自動適用できないものに当たったらそこで止まり、飛び越えない
-  （`auto-approval.ts:70-71`）。実機で確認済み
+  （`auto-approval.ts:70-71` — `autoApprovable !== true || rule === undefined`）。実機で確認済み
 - **シミュレーションはプラットフォーム機能ではなく、各 Gatekeeper の自前実装**。
   Google のものだけが本格的（`#simulationCache` を持つ）。
   「承認待ちでもエージェントが進める」の実現度は接続先ごとにばらつく
@@ -252,12 +252,12 @@ UI に**エージェントを通さない経路**がある。
 
 | 経路 | 場所 |
 |---|---|
-| `.gadget` のインポート | `BlueprintList.tsx:195` — `importBlueprint(file.stream())` |
-| Blueprint から Gadget 生成 | `BlueprintLandingPage.tsx:574` — `newGadgetFromBlueprint()` |
+| `.gadget` のインポート | `BlueprintList.tsx:195` — `importBlueprint` |
+| Blueprint から Gadget 生成 | `BlueprintLandingPage.tsx:574` — `newGadgetFromBlueprint` |
 | 画面 | `routes/blueprints.tsx`、`routes/blueprint.$id.tsx` |
 
 なお `Overseer.createGadget(title, chatId?, bindingName?)` は **`chatId` を省略すると
-恒久的に作成される**（`api.ts:1366-1375`）。`bindingName` 省略時の自動命名は
+恒久的に作成される**（`api.ts:1366-1375` に "Without `chatId` the gadget is created permanently"）。`bindingName` 省略時の自動命名は
 「via the quick model **when configured**, else a generic fallback」とあり、
 **モデル不在が想定された設計**になっている。ただしフロントエンドの `createGadget`
 参照は全て `ChatInterface.tsx`（エージェントのツール呼び出しの描画）で、
@@ -360,7 +360,8 @@ Gadget の画面には **App / Code / Connections** のタブがある。
 観察: コードを編集すると、編集していない側のウィンドウは**数字が固まり、
 ボタンも不動になる**。エラーメッセージも出ない。リロードで復旧する。
 
-原因は `agent.ts:460`（プラットフォームがエージェントに与えている説明）にある。
+原因は `agent.ts:460` — `calls made while its replacement is being acquired will wait`
+— つまりプラットフォームがエージェントに与えている説明にある。
 
 > The top-level `gadget` stub survives backend reconnects, and calls made
 > while its replacement is being acquired **will wait**.
@@ -567,7 +568,7 @@ pnpm run-local                            # ← 起動するか
 
 手順2 の原文は「副作用のある操作をエージェントにさせる」だったが、
 承認待ちを作る `submitAction` の呼び出し元は `GatekeeperCaller` 型で、
-`{from: "gadget", gadgetId}` を含む（`overseer.ts:6809-6825`）。
+`{from: "gadget", gadgetId}` を含む（`overseer.ts:6809-6825` — `from: "gadget";`）。
 **Gadget が binding を叩けば pending が立つ。** §2.7 の「エージェントを迂回する」
 筋がここでも通った。
 
@@ -577,14 +578,14 @@ pnpm run-local                            # ← 起動するか
 外部アカウントも OAuth も要らない。実害のある副作用は起こさず、メモに文字列を足すだけ。
 
 **`gatekeeper-mcp` ではなく `gatekeeper-mcp-portal` を使った。** 前者は
-`TRUST` を `"byo"` に固定しており（`mcp.ts:77`）、byo では `classifyTool` の
+`TRUST` を `"byo"` に固定しており（`mcp.ts:77` — `const TRUST: ServerTrust = "byo";`）、byo では `classifyTool` の
 `autoApprovable` が必ず false になる。つまり URL を貼る方式では
 **自動承認が永久に観察できない**。ポータル側は `MCP_PORTAL_TRUST_ANNOTATIONS=true` で
 `"vetted"` になる。
 
 ローカルの MCP サーバに繋ぐには `MCP_ALLOW_INSECURE=true` が要る。
-`run-dev-server.js:189-195` がこれを `.dev.vars` から gatekeeper へ渡す配線を
-持っており、**ローカル開発を想定した公式の逃げ道**である。
+`run-dev-server.js:189-195` — `"gatekeeper-mcp": ["MCP_ALLOW_INSECURE"]` — が
+これを `.dev.vars` から gatekeeper へ渡す配線を持っており、**ローカル開発を想定した公式の逃げ道**である。
 
 再現手順:
 
@@ -647,8 +648,8 @@ if (record.description.autoApprovable !== true || rule === undefined) {
   break;
 }
 ```
-（`auto-approval.ts:70-71`。同ファイル 54 行に
-"nothing is silently applied past a human gate" と設計意図がある）
+（`auto-approval.ts:70-71` — `A manual gate. Stop rather than skipping ahead`。
+設計意図は `auto-approval.ts:54` に "nothing is silently applied past a human gate" とある）
 
 実際にそうなった。`notes_append`（人手が要る）を先に、`notes_touch`（資格あり）を
 後に積んだ状態で `notes_touch` のルールを有効にしても、**何も起きなかった**。
@@ -668,7 +669,7 @@ pending actions" とある）。
 #### `actionKind` の第三の状態
 
 §2.4 は「タグを持たない action はどのルールにも一致せず永久に手動」と記録したが、
-MCP は `actionKindFor` が必ず `scopeTag:toolName` のタグを付ける（`tools.ts:94`）。
+MCP は `actionKindFor` が必ず `scopeTag:toolName` のタグを付ける（`tools.ts:94` — `export function actionKindFor(scopeTag: string, toolName: string)`）。
 それでも `notes_append` は永久に手動である。**タグはあるが自動承認の資格がない**という、
 §2.4 が想定していなかった状態が存在する。適格性は二つの署名を要求する——
 "Eligibility requires BOTH signals"（`auto-approval.ts:56`）。
@@ -678,8 +679,8 @@ MCP は `actionKindFor` が必ず `scopeTag:toolName` のタグを付ける（`t
 - **アカウントは移設で来ない。** `.wrangler/state` は git に入らないので、
   別マシンで作ったアカウントは存在しない。**ログインではなく新規作成**が要る。
   `signupsEnabled` は既定 true
-- **管理者名は `admin` に固定。** `run-dev-server.js:235` が
-  `config.vars.ADMINS = ["admin"]` をハードコードしており `.dev.vars` では変えられない。
+- **管理者名は `admin` に固定。** `run-dev-server.js:235` — `config.vars.ADMINS = ["admin"];`
+  — がハードコードしており `.dev.vars` では変えられない。
   ただし手順2 の範囲（接続・Gadget 作成・承認）は一般ユーザで足りた
 - **dev サーバはセッションに紐づけて起動すると道連れで落ちる。**
   エージェントのバックグラウンドタスクとして起動すると、セッション終了時に kill される。
@@ -804,7 +805,7 @@ git config --add remote.origin.fetch '+refs/heads/main:refs/remotes/origin/main'
 |---|---|
 | `ntangle` | Perl 製の最小 tangler（40 行）。`-r <チャンク名>` でルートを選ぶ |
 | `nweave` | Perl 製の最小 weaver（.nw → HTML）。証拠を種類別に色分けする |
-| `nwitness` | **証拠を集計する第三の道具**（§6.1）。既定は未証の節だけ、`-a` で全部 |
+| `nwitness` | **証拠を集計する第三の道具**（§6.1）。既定は未証の節だけ、`-a` で全部、`-v` で裏取り。`.md` を渡すと本文中の引用を突き合わせる |
 | `mkgadget.mjs` | `.gadget` Blueprint を組み立てる（Node）。実機へ載せる経路。詳細は §2.7 |
 | `ckgadget.mjs` | `.gadget` を解いて検証する。`mkgadget` の対。純正の `.gadget` も解ける |
 | `mockportal.mjs` | 手順2 用のモック MCP ポータル（Node、依存なし）。承認フローを外部アカウントなしで観察する。詳細は §2.14 |
@@ -986,9 +987,8 @@ WEB が記述するのは**構造**だけで、**振る舞い**は書けない�
    あるのに無防備である。** 2026-08-10 に上流の 1 コミットで手書き引用が
    3 件同時に腐り、機械は何も言わなかった（§2.15）
 
-1 と 2 は実際に使って困ってから直すほうがよい。4 は実害が出たので直したい。
-`.nw` 以外のファイルからも `@証` 相当の行を拾えるようにするか、
-Markdown 中の `` `file.ts:123` `` を拾って同じ突き合わせをかけるかの二択になる。
+1 と 2 は実際に使って困ってから直すほうがよい。
+4 は実害が出たので**その日のうちに直した**（下記）。
 
 #### 全節を監査した（2026-08-09）
 
@@ -1089,6 +1089,56 @@ Markdown 中の `` `file.ts:123` `` を拾って同じ突き合わせをかけ�
 生成するたびに**別のワークスペース＝別の Durable Object** ができる。
 最初の試行では 2 つの別ワークスペースを開いてしまい、購読者が 1 ずつに
 なった。状態を共有するには**同じワークスペース URL** を 2 窓で開く必要がある。
+
+#### Markdown の引用も見るようにした（2026-08-10）
+
+弱点 4 への対処。**風化が実際に起きたのが `.nw` ではなくこの HANDOFF だった**ので、
+守備範囲を揃えた。`nwitness HANDOFF.md` で、本文に散らばった
+バッククォート囲みの「ファイル名:行番号」を拾って突き合わせる。
+`make witness VERIFY=1` に含めてある。
+
+`.nw` と違って地の文には「種類・典拠・記述」の構造がない。あるのは引用と、
+その隣に書かれていることの多い短い逐語だけである。これを**アンカー**と呼び、
+`.nw` の二段構えをそのまま持ち込んだ。
+
+| | 検査すること | `.nw` での対応 |
+|---|---|---|
+| アンカーあり | 逐語がその範囲に実在するか | `証言` |
+| アンカーなし | 行が実在するかだけ | `推理` |
+
+**行の存在だけでは今回の風化は捕まらない。** ずれた先にも行はあったからである。
+だからアンカーのない引用は未証と同じ扱いで並べ、足す先を示す。
+アンカーは既に本文で使っていた 3 つの書き方から自動で拾う。
+
+```
+`mcp.ts:77` — `const TRUST: ServerTrust = "byo";`     ← 破線のあとのコード
+`api.ts:1317-1320` に「Interface to … code sync」     ← 「」の引用
+"Eligibility requires BOTH signals"（`auto-approval.ts:56`）  ← 引用が先、典拠が後
+```
+
+**本命の検証**: 今日腐った 3 件を腐る前の値に戻して走らせたところ、
+**3 件とも検出した**。行番号を 1 つずらす／範囲外にする試験も反応し、
+問題があれば終了コード 1 を返す。
+
+導入時に文書側の誤りも 2 件見つかった。どちらも
+**「引用」と名乗りながら逐語でなかった**もので、
+`importBlueprint(file.stream())` と `newGadgetFromBlueprint()` は
+実際には引数が違う。2026-08-09 に `agent.ts:452` で捕まえたのと同じ類である。
+**道具を入れるたびに同じ種類の嘘が出てくる。**
+
+道具側の誤検出も 2 件あり、こちらは道具を直した。
+
+- **複数行に跨る引用が `//` で切れる。** 行頭のコメント記号を落としてから
+  連結するようにした（`hay_of`）。飾りであって中身ではない
+- **次の行にある別の典拠の引用文を掴む。** 引用符の開きは典拠と同じ行に
+  なければならない、という条件を足した
+
+**記法の揺れは道具側で吸収し、雑な引用は文書側を直す**という 2026-08-09 の
+判断が、そのまま二度目にも当てはまった。
+
+現状は 引用 26 件、うちアンカーあり 15、要確認 0。残りは `GadgetUI.tsx` への
+推論（`.nw` でも `推理` 扱い）と、道具自身の説明に出てくる例示である。
+**アンカーなしは不良ではなく、証拠の強さが一段低いことの表示**である。
 
 #### 探偵という比喩について
 

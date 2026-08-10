@@ -1,6 +1,7 @@
 #!/usr/bin/env perl
 # nwitness - .nw 文書の証拠を集計する。tangle（綯う）/ weave（織る）に対する第三の操作。
-#   usage: nwitness [-a] file.nw
+#   usage: nwitness [-a] [-v] file.nw
+#          nwitness file.md      本文中の `file.ts:123` 形式の引用を突き合わせる
 #          -a  証拠の付いている節も含めて全部出す（既定は未証の節だけ）
 #
 # 平文の既定は「未証」である。`@証` の行が置かれたところだけ裏付けが付く。
@@ -28,7 +29,15 @@ while (@ARGV && $ARGV[0] =~ /^-/) {
     elsif ($o eq '-v') { $verify = 1 }
     else  { die "nwitness: 不明なオプション $o\n" }
 }
-my $file = shift or die "usage: nwitness [-a] [-v] file.nw\n";
+my $file = shift or die "usage: nwitness [-a] [-v] file.nw|file.md\n";
+
+my $REF = 'reference/cloudflare-os';
+
+# Markdown は .nw と違い、節に証拠を貼る構造を持たない。拾えるのは本文に
+# 散らばった `file.ts:123` という引用だけである。だがそれで足りる。
+# 2026-08-10 に腐ったのはまさにこれで、行番号だけがずれて内容は動いていた。
+exit check_markdown($file) if $file =~ /\.md$/i;
+
 open(my $fh, '<:encoding(UTF-8)', $file) or die "nwitness: $file: $!\n";
 
 my @sections;                      # { title, line, ev => [...] }
@@ -69,7 +78,6 @@ close $fh;
 #   証言  引用文がその行に実在するか
 #   推理  本文はこちらの推論なので、行が実在するかだけ
 #   物証  典拠は日付。突き合わせる相手がない
-my $REF = 'reference/cloudflare-os';
 my @stale;
 if ($verify) {
     if (!-d $REF) {
@@ -97,12 +105,21 @@ if ($verify) {
 
             # 証言。引用は行の一部でよい。エスケープと空白の揺れは吸収する
             # （TS のテンプレートリテラル内は ` が \` になっているなど）。
-            my $hay = norm(join ' ', @lines[$from-1 .. $to-1]);
+            my $hay = hay_of(@lines[$from-1 .. $to-1]);
             my $needle = norm($e->{text});
             push @stale, [$e, "引用が $name:$from に見当たらない"]
                 if length $needle && index($hay, $needle) < 0;
         }
     }
+}
+
+# 引用の突き合わせ相手（干し草）を作る。複数行に跨る引用のために、
+# **行頭のコメント記号を落としてから連結する**。落とさないと
+# 「code sync (one Yjs doc for / the whole workspace)」のような引用が、
+# 途中に紛れ込む `//` のせいで一致しない。飾りであって中身ではない。
+sub hay_of {
+    my @lines = @_;
+    return norm(join ' ', map { my $t = $_; $t =~ s{^\s*(?://+|\*+|\#)\s?}{}; $t } @lines);
 }
 
 sub norm {                     # 突き合わせ用の正規化
@@ -120,6 +137,111 @@ sub norm {                     # 突き合わせ用の正規化
 sub read_lines {
     open(my $h, '<:encoding(UTF-8)', shift) or return ();
     my @l = <$h>; close $h; return @l;
+}
+
+# ---- Markdown の引用を突き合わせる ----
+#
+# `.nw` の証拠は「種類・典拠・記述」の三つ組だが、Markdown の地の文に
+# そんな構造はない。あるのは `api.ts:1317-1320` のような引用と、その隣に
+# 書かれていることが多い短い逐語である。後者をアンカーと呼ぶ。
+#
+#   アンカーあり  逐語がその範囲に実在するか（`.nw` の 証言 と同じ強さ）
+#   アンカーなし  行が実在するかだけ（`.nw` の 推理 と同じ強さ）
+#
+# **行の存在だけでは今回の風化は捕まらない。** ずれた先にも行はあったからである。
+# だからアンカーのない引用は「未証」と同じ扱いで並べ、足す先を示す。
+sub check_markdown {
+    my $path = shift;
+    die "nwitness: $REF がない。裏取りには参照元が要る（setup.sh を先に）\n" unless -d $REF;
+    my %index = build_index($REF);
+
+    open(my $h, '<:encoding(UTF-8)', $path) or die "nwitness: $path: $!\n";
+    my @src = <$h>; close $h;
+
+    my (@bad, @loose);
+    my ($total, $anchored) = (0, 0);
+    my $fenced = 0;
+
+    for my $i (0 .. $#src) {
+        my $l = $src[$i];
+        if ($l =~ /^\s*```/) { $fenced = !$fenced; next }
+        next if $fenced;
+
+        while ($l =~ /`([A-Za-z0-9_.\-]+\.(?:ts|tsx|js|mjs|jsonc)):(\d+)(?:-(\d+))?`/g) {
+            my ($name, $from, $to) = ($1, $2, $3 // $2);
+            $total++;
+            my $where = { line => $i + 1, src => "$name:$from" . ($3 ? "-$3" : "") };
+
+            # アンカーは引用の前後どちらにも書かれうる。前に置く形（引用文を
+            # 先に示して括弧で典拠を添える）も実際に使っている。
+            my $rest   = substr($l, pos($l));
+            my $cont   = ($src[$i+1] // '') . ' ' . ($src[$i+2] // '');
+            my $before = substr($l, 0, pos($l) - length("`$name:$from`"));
+            my $anchor = anchor_after($rest, $cont) // anchor_before($before);
+
+            my $paths = $index{$name};
+            if    (!$paths)      { push @bad, [$where, "参照元に $name が見つからない"]; next }
+            elsif (@$paths > 1)  { push @bad, [$where, "$name が複数ある: " . join(', ', @$paths)]; next }
+
+            my @lines = read_lines($paths->[0]);
+            if ($to > @lines) {
+                push @bad, [$where, "$name は " . scalar(@lines) . " 行しかない"]; next;
+            }
+            if (!defined $anchor) { push @loose, $where; next }
+
+            $anchored++;
+            my $hay = hay_of(@lines[$from-1 .. $to-1]);
+            # 「A … B」と省略された引用は、断片ごとに照合する。
+            for my $frag (split /…|\.\.\./, $anchor) {
+                my $needle = norm($frag);
+                next unless length $needle;
+                if (index($hay, $needle) < 0) {
+                    push @bad, [$where, "引用が見当たらない: $needle"];
+                    last;
+                }
+            }
+        }
+    }
+
+    print "$path\n\n";
+    printf "  アンカーなし  %s:%d  %s\n", $path, $_->{line}, $_->{src} for @loose;
+    print "\n" if @loose;
+    printf "引用 %d 件、うちアンカーあり %d / 要確認 %d\n", $total, $anchored, scalar @bad;
+
+    if (@bad) {
+        print "\n要確認: 典拠が合わない。上流が変わったか、引用が不正確か。\n";
+        for my $b (@bad) {
+            my ($w, $why) = @$b;
+            printf "      %s:%d  %s\n", $path, $w->{line}, $w->{src};
+            printf "        %s\n", $why;
+        }
+    }
+    return @bad ? 1 : 0;
+}
+
+# 引用のうしろ: 「— `code`」「に「…」」「に "…"」
+#
+# 引用符の**開き**は引用と同じ行になければならない。閉じは次行に跨いでよい。
+# 跨がせないと、次の行にある別の典拠の引用文を掴んでしまう（実例:
+# 「`auto-approval.ts:70-71`。同ファイル 54 行に "…"」で 54 行の引用を
+# 70-71 行のアンカーだと誤認した）。
+sub anchor_after {
+    my ($rest, $cont) = @_;
+    return $1 if $rest =~ /^\s*[—–-]\s*`([^`]+)`/;
+    for my $q (['「', '」'], ['"', '"']) {
+        my ($open, $close) = @$q;
+        next unless $rest =~ /^[^\Q$open\E]{0,16}\Q$open\E/;
+        my $joined = $rest . ' ' . $cont;
+        return $1 if $joined =~ /\Q$open\E([^\Q$close\E]+)\Q$close\E/;
+    }
+    return undef;
+}
+
+sub anchor_before {            # 引用のまえ: 「…」（`file:123`）の形
+    my $t = shift;
+    return $1 if $t =~ /「([^」]+)」[^「」]{0,4}$/;
+    return $1 if $t =~ /"([^"]+)"[^"]{0,4}$/;
+    return undef;
 }
 
 sub build_index {              # ファイル名 -> パス（node_modules と dist は除く）
