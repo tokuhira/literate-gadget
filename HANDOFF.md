@@ -216,6 +216,8 @@ mv packages/gatekeeper-github/wrangler.jsonc{.disabled,}
 （実際に外して確かめてはいない）。
 
 結果、watcher は 15 → 1、空きメモリ 1.4Gi で安定動作した。
+（**その後 2 個になった。** 承認 UI の観察に `gatekeeper-mcp-portal` が要るので
+有効化してある。§2.14）
 なお**手順3 に gatekeeper は不要**である。要るのは手順2 の承認 UI 観察のときだけ。
 
 もう一点。**クラッシュすると `run-dev-server.js` が孤児として生き残り、
@@ -585,11 +587,8 @@ pnpm run-local                            # ← 起動するか
 再現手順:
 
 ```sh
-# 1. ポータル gatekeeper を有効化（間引きを 1 つ戻す。§2.6 と同じ操作）
+# 1. .dev.vars を置く（リポジトリルート、gitignore 済み）
 cd reference/cloudflare-os
-mv packages/gatekeeper-mcp-portal/wrangler.jsonc{.disabled,}
-
-# 2. リポジトリルートの .dev.vars（gitignore 済み）
 cat > .dev.vars <<'EOF'
 MCP_ALLOW_INSECURE=true
 MCP_PORTAL_URL=http://127.0.0.1:9977/
@@ -598,15 +597,17 @@ MCP_PORTAL_AUTH=none
 MCP_PORTAL_TRUST_ANNOTATIONS=true
 EOF
 
-# 3. モックサーバ（別のシェルで）
+# 2. モックサーバ（別のシェルで）
 node tools/mockportal.mjs
 
-# 4. Workshop
+# 3. Workshop
 setsid nohup pnpm run-local &
 ```
 
-**この改変はフォークにコミットしていない。** 間引きを維持する判断（§3）と
-衝突するためで、手順2 を再現するときだけ手で戻す。戻し方は上の 1 行。
+**`gatekeeper-mcp-portal` の有効化はフォークにコミット済み**（`e319967`）なので、
+`setup.sh` から clone し直せば最初から有効になっている。watcher は 1 個から
+2 個に増える。メモリの厳しい環境で困るなら `wrangler.jsonc.disabled` に
+戻せばよく、これは §2.6 の間引きと同じ操作である。
 
 道具は三つ用意し、注釈で扱いを撃ち分けた。
 
