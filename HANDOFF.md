@@ -253,11 +253,11 @@ UI に**エージェントを通さない経路**がある。
 | 経路 | 場所 |
 |---|---|
 | `.gadget` のインポート | `BlueprintList.tsx:195` — `importBlueprint(file.stream())` |
-| Blueprint から Gadget 生成 | `BlueprintLandingPage.tsx:578` — `newGadgetFromBlueprint()` |
+| Blueprint から Gadget 生成 | `BlueprintLandingPage.tsx:574` — `newGadgetFromBlueprint()` |
 | 画面 | `routes/blueprints.tsx`、`routes/blueprint.$id.tsx` |
 
 なお `Overseer.createGadget(title, chatId?, bindingName?)` は **`chatId` を省略すると
-恒久的に作成される**（`api.ts:1340-1349`）。`bindingName` 省略時の自動命名は
+恒久的に作成される**（`api.ts:1366-1375`）。`bindingName` 省略時の自動命名は
 「via the quick model **when configured**, else a generic fallback」とあり、
 **モデル不在が想定された設計**になっている。ただしフロントエンドの `createGadget`
 参照は全て `ChatInterface.tsx`（エージェントのツール呼び出しの描画）で、
@@ -422,7 +422,7 @@ Gadget の画面には **App / Code / Connections** のタブがある。
 | 経路 | Workshop の外側の画面 → `subscribeToCode` | サンドボックス iframe → `gadget` スタブ |
 | コード再デプロイの影響 | 受けない | 壊れる |
 
-`api.ts:1290-1294` に「Interface to a workspace's Overseer … code sync
+`api.ts:1317-1320` に「Interface to a workspace's Overseer … code sync
 (one Yjs doc for the whole workspace)」とある。コード doc はワークスペース全体で
 1 つで、`subscribeToCode` は Overseer のメソッド。一方 `gadget` スタブが繋がる先は
 我々が書いた `Gadget` クラスのインスタンスで、**別の Durable Object**。
@@ -449,6 +449,8 @@ cloudflare-os の上流が動き、フォークの `main` に取り込まれて�
 
 ```sh
 cd reference/cloudflare-os
+# 初回だけ: clone が -b 指定だったので refspec がブランチ限定。main も追跡する（§2.15）
+git config --add remote.origin.fetch '+refs/heads/main:refs/remotes/origin/main'
 git fetch --depth=50 origin main          # --unshallow は不要だった
 git merge-base --is-ancestor <土台> origin/main   # 分岐していないか確認
 git tag -f before-sync-<日付> HEAD        # 戻り先を確保
@@ -699,6 +701,68 @@ MCP は `actionKindFor` が必ず `scopeTag:toolName` のタグを付ける（`t
   **起きないことを確かめたのではなく、起きうる構造だと確かめた**にすぎない。
   自前のサーバなので嘘をつかせれば試せる
 
+### 2.15 二度目の上流追従で、証拠の風化を初めて捕まえた（2026-08-10）
+
+上流の新着は **1 コミットだけ**（`b2a51b5` "Classify RPC errors client-side and
+quiet recoverable failures" #110）。rebase は衝突ゼロで通り、`main` との差分は
+リネーム 14 件（0 insertions, 0 deletions）のまま。起動も確認した。
+
+**追従そのものより、そこで見つかったことのほうが重要である。**
+
+#### 手順の穴: `origin/main` が追跡されていなかった
+
+§2.12 の手順どおり `git fetch --depth=50 origin main` を打っても
+`origin/main` が作られない。clone が `--depth 1 -b literate-gadget-minimal`
+だったため、refspec がそのブランチ限定になっていた。
+
+```sh
+git config --add remote.origin.fetch '+refs/heads/main:refs/remotes/origin/main'
+```
+
+一度入れれば以後は §2.12 の手順が素直に通る。
+
+#### 裏取りは 36 件通ったが、また弱い検査だった
+
+`.nw` 側の証拠は全部通った（`counter.nw` 14 件 / `notes.nw` 22 件）。
+しかし**典拠にしているファイルが 1 つも変わっていない**。今回動いたのは
+`api.ts` / `user.ts` / `server.ts` とフロントエンドで、証拠が指すのは
+`agent.ts` / `GadgetUI.tsx` / `tools.ts` / `auto-approval.ts` / `overseer.ts` /
+`session.ts` / `mcp.ts` / `run-dev-server.js`。**重なりがゼロだった。**
+通ったのは頑健だからではなく、当たらなかったからである。
+
+#### 本当の発見: HANDOFF の手書き引用が 3 件、同時に腐った
+
+機械検査の外側で風化が起きていた。
+
+| 引用 | 追従前 | 追従後 | ずれ |
+|---|---|---|---|
+| `api.ts` Overseer / code sync（§2.11） | 1290-1294 ✓ | **別の場所** | +27 |
+| `api.ts` createGadget の chatId（§2.7） | 1340-1349 ✓ | **別の場所** | +26 |
+| `BlueprintLandingPage.tsx` newGadgetFromBlueprint（§2.7） | 578 ✓ | **別の場所** | −4 |
+
+**追従前は 3 件とも正しかった**ことを `git show 1cb5e3d:...` で確認している。
+つまり**この 1 コミットが 3 件を同時に腐らせた**。しかも誰も気づかない。
+`nwitness -v` は `.nw` しか見ないからである。
+
+引用は上の表のとおり修正した（`api.ts:1317-1320`、`api.ts:1366-1375`、
+`BlueprintLandingPage.tsx:574`）。
+
+#### ファイル名で索引を引く設計が効いた例
+
+`BlueprintList.tsx` は `src/` から `src/components/` へ**移動していた**が、
+行番号 195 の内容は一致したままだった。`nwitness` は**パスではなくファイル名**で
+索引を引くので、この種の移動では壊れない（§6.1 の「参照元は名前で引く」）。
+最初はファイルが消えたと読み違えたが、探し直して分かった。
+
+#### 含意
+
+**証拠の風化は「あるかもしれない」ではなく「起きる」である。**
+上流の 1 コミット、しかもこちらのコードとは無関係な変更で、3 件が同時に落ちた。
+
+そして**守られているのは `.nw` だけ**である。事実の大半を抱えているのは
+この HANDOFF のほうで、そちらは無防備だった。§6.1 の弱点表に 4 番目として
+追加した。
+
 ---
 
 ## 3. 未検証・推測にとどまること
@@ -917,8 +981,14 @@ WEB が記述するのは**構造**だけで、**振る舞い**は書けない�
 2. **物証にも解釈が混じる。** 「固まりエラーも出なかった」は観察だが、
    「だからハングだ」は解釈。記法上は区別できていない
 3. ~~**証拠が古びる。**~~ → **裏取りを実装した（2026-08-09、下記）**
+4. **守れるのは `.nw` だけ。** `nwitness` は `.nw` を読む道具なので、
+   同じ引用が `HANDOFF.md` にあっても検査されない。**事実の大半はこちらに
+   あるのに無防備である。** 2026-08-10 に上流の 1 コミットで手書き引用が
+   3 件同時に腐り、機械は何も言わなかった（§2.15）
 
-1 と 2 は実際に使って困ってから直すほうがよい。
+1 と 2 は実際に使って困ってから直すほうがよい。4 は実害が出たので直したい。
+`.nw` 以外のファイルからも `@証` 相当の行を拾えるようにするか、
+Markdown 中の `` `file.ts:123` `` を拾って同じ突き合わせをかけるかの二択になる。
 
 #### 全節を監査した（2026-08-09）
 
