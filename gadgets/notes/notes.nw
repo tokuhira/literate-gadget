@@ -1,0 +1,455 @@
+# 承認を観察する Gadget
+
+Gadget が外の世界に触れると何が起きるかを見るための Gadget である。
+`counter.nw` が Gadget 単体の仕組みを見る道具だったのに対して、
+こちらは **Gadget と Gatekeeper のあいだ**を見る。
+
+見たいのは次の三つで、これは `HANDOFF.md` §5 手順2 が挙げた項目である。
+
+- 承認待ちの操作が画面にどう出るか
+- 自動承認ルールを後から足したとき、待たされていた操作がその場で通るか
+- 読み取りが本当に承認を経ずに素通りするか
+
+そのために、繋ぐ先には**性質の違う三つの道具**を用意してある。
+接続先は `tools/mockportal.mjs`（このリポジトリに同梱の、依存のない MCP サーバ）で、
+実害のある副作用は起こさない。メモに文字列を足すだけである。
+
+## なぜエージェントを使わないか
+
+手順2 の原文は「副作用のある操作をエージェントにさせる」だったが、
+**エージェントは要らない。** 承認待ちの記録を作る `submitAction` は
+呼び出し元を選ばず、Gadget からの呼び出しもそこに含まれる。
+`§2.7` で使った「エージェントを迂回する」筋がここでも通る。
+
+@証 証言 overseer.ts:6813 from: "gadget";
+@証 推理 overseer.ts:6809-6825 呼び出し元は agent / gadget / user / hook の四つで、gadget はそのうちの一つ
+
+## 三つの道具と、その期待される扱い
+
+MCP のツールが「読み取り」か「承認の要る操作」かは、
+**サーバ自身が付けた注釈だけ**で決まる。判定は一箇所にまとまっていて、
+すべて `=== true` / `=== false` の比較である。注釈のないツールは
+どの判定にも当たらず、承認の要る操作として扱われる。
+
+さらに、**自動承認を許されるのは注釈を信用してよい接続先だけ**である。
+利用者が URL を貼る方式（`byo`）では、書き込みが自動で通ることは決してない。
+
+| 道具 | 注釈 | 期待される扱い |
+|---|---|---|
+| `notes_read` | `readOnlyHint: true` | 観測。承認を経ずに走る |
+| `notes_append` | なし | 操作。**常に手動の承認**が要る |
+| `notes_touch` | `destructiveHint: false`, `idempotentHint: true` | 操作。自動承認ルールを作れる |
+
+三つ目が要るせいで、接続先には `gatekeeper-mcp` ではなく
+`gatekeeper-mcp-portal` を使っている。前者は信用の段階が `byo` に固定されており、
+自動承認が永久に成立しないためである。
+
+@証 物証 2026-08-10 grant の画面で read-only / needs approval のバッジが上の表のとおりに付いた
+@証 証言 tools.ts:73 mode: readOnly ? "read" : "action",
+@証 証言 tools.ts:66-69 const autoApprovable = !readOnly && trust === "vetted" && annotations.destructiveHint === false && annotations.idempotentHint === true;
+@証 証言 mcp.ts:77 const TRUST: ServerTrust = "byo";
+@証 証言 run-dev-server.js:192 "MCP_PORTAL_TRUST_ANNOTATIONS", "MCP_ALLOW_INSECURE",
+
+---
+
+## サーバ側の全体像
+
+`counter.nw` と同じく Durable Object で、クラス名は `Gadget` でなければならない。
+
+違うのは **`this.env` を使うこと**である。Gadget はサンドボックスの中にいて
+`fetch()` でインターネットに出られない。外の世界に触れる道は binding だけで、
+それが `this.env` に生えている。
+
+@証 証言 agent.ts:398 The class must be exported under the name `Gadget`
+@証 証言 agent.ts:421 a Gadget communicates with the outside world strictly through its "bindings"
+
+<<server.js>>=
+import { DurableObject } from "cloudflare:workers";
+
+<<結果を一行にまとめる>>
+
+export class Gadget extends DurableObject {
+  <<購読者の集合を用意する>>
+  <<接続先を取り出す>>
+  <<記録を読む>>
+  <<記録に一行足す>>
+  <<メモを読む>>
+  <<メモに書き足す>>
+  <<メモを触る>>
+  <<保留中の結果を回収する>>
+  <<更新の購読を受け付ける>>
+  <<全員に配信する>>
+}
+@
+
+## 購読者の集合
+
+`counter.nw` と同じ理由で、接続中のブラウザから預かったコールバックは
+メモリの集合に置く。接続が切れれば意味を失う情報だからである。
+
+@証 証言 agent.ts:468 Memory is OK to use for caching
+
+<<購読者の集合を用意する>>=
+constructor(ctx, env) {
+  super(ctx, env);
+  this.subscribers = new Set();
+}
+@
+
+## 接続先
+
+binding の**名前は利用者が接続のときに決める**。文書の側からは分からないので、
+`NOTES` という名前を要求することにして、無ければその旨を投げる。
+
+推測して拾いに行くこともできるが、やらない。Gadget の env には別の binding も
+生えうるし、間違った相手に副作用を送るより、繋ぎ方が違うと画面に出るほうがよい。
+
+@証 推理 agent.ts:421 binding は this.env の属性として現れるので、名前が合わなければ undefined になる
+
+<<接続先を取り出す>>=
+
+get notes() {
+  const binding = this.env.NOTES;
+  if (!binding) {
+    throw new Error(
+      "NOTES という名前の接続がない。Connections で名前を NOTES にして繋ぐこと。");
+  }
+  return binding;
+}
+@
+
+## 記録
+
+三つの道具を呼んだ結果を、そのまま画面に出すために貯めておく。
+これは**再起動を跨いで残ってほしい**ので、メモリではなくストレージに置く。
+承認は人間が別の画面で行うため、Gadget が待っているあいだにコードが
+入れ替わることもありうる。
+
+古いものから捨てて 20 件だけ持つ。観察用なので全部は要らない。
+
+@証 証言 agent.ts:468 ALWAYS store server state in Durable Object storage, not just in memory
+
+<<記録を読む>>=
+
+async getLog() {
+  return (await this.ctx.storage.get("log")) ?? [];
+}
+@
+
+<<記録に一行足す>>=
+
+async note(entry) {
+  const log = [...(await this.getLog()), { at: new Date().toISOString(), ...entry }];
+  const trimmed = log.slice(-20);
+  await this.ctx.storage.put("log", trimmed);
+  this.broadcast(trimmed);
+  return trimmed;
+}
+@
+
+## 呼び出しの結果
+
+三つの道具はどれも同じ形の結果を返す。`status` が `ok` なら中身が入っており、
+それ以外なら人間向けの説明が入っている。**保留のときだけ `actionId` が付く**ので、
+それを覚えておけばあとで結果を取りに行ける。
+
+@証 証言 session.ts:149 needs approval. Poll getActionResult(
+
+<<結果を一行にまとめる>>=
+function summarize(tool, result) {
+  return {
+    tool,
+    status: result.status,
+    actionId: result.actionId,
+    detail: result.status === "ok" ? result.text : result.message,
+  };
+}
+@
+
+## 読み取り
+
+`notes_read` は読み取りとして注釈されているので、承認を経ずにその場で走る。
+**戻り値が `pending` にならないことが、観察したい事実そのもの**である。
+
+記録は残る。ただし記録されるのは観測であって、承認の対象にはならない。
+
+@証 物証 2026-08-10 押すと ok が即座に返り、モックサーバに tools/call notes_read が届いた。承認は求められなかった
+@証 証言 tools.ts:73 mode: readOnly ? "read" : "action",
+
+<<メモを読む>>=
+
+async readNote() {
+  return this.note(summarize("notes_read", await this.notes.callTool("notes_read", {})));
+}
+@
+
+## 書き足し
+
+`notes_append` には注釈が一つも付いていない。したがって承認の要る操作になり、
+接続先が信用されていても自動承認の対象にはならない。**何度押しても手動の承認が要る**、
+というのがこの道具の役目である。
+
+呼び出しはすぐ返ってくる。**返ってくるのは結果ではなく `pending` と番号**で、
+実際に走ったかどうかはこの時点では分からない。
+
+**走っていないことを外から確かめた。** 押した直後、接続先のサーバには
+何も届いていなかった。承認 UI の説明文も
+「Nothing has been sent yet」と述べている。呼び出しは gatekeeper の手前で
+止められ、保留として積まれるだけである。
+
+@証 物証 2026-08-10 押すと pending と番号が返り、モックサーバ側の着信は一件も増えなかった
+@証 証言 tools.ts:66-69 const autoApprovable = !readOnly && trust === "vetted" && annotations.destructiveHint === false && annotations.idempotentHint === true;
+
+<<メモに書き足す>>=
+
+async appendNote(text) {
+  return this.note(
+    summarize("notes_append", await this.notes.callTool("notes_append", { text })));
+}
+@
+
+## 触る
+
+`notes_touch` は「壊さない」「何度やっても同じ」と注釈してある。
+接続先が信用されている場合に限り、この二つが揃うと自動承認の候補になる。
+
+**同じ `pending` から始まる**ことに注意する。自動承認ルールを作る前は
+`notes_append` と見分けがつかない。違いが出るのはルールを足したあとである。
+
+違いは承認 UI に現れた。**この道具の保留にだけ `Always approve` の選択肢が出る。**
+`notes_append` の保留には出ない。注釈を信用してよい接続先であっても、
+注釈のないツールは自動承認の資格を持たないためである。
+
+@証 物証 2026-08-10 押すと pending。Activity ではこの道具の保留にだけ Always approve が現れ、notes_append には現れなかった
+
+<<メモを触る>>=
+
+async touchNote() {
+  return this.note(summarize("notes_touch", await this.notes.callTool("notes_touch", {})));
+}
+@
+
+## 自動承認は前の関門を越えない
+
+**ルールを作れば待っている保留がすぐ通る、とは限らない。**
+
+保留を適用する処理は、その gatekeeper の保留を **id の昇順に見て、
+自動適用できないものに当たったらそこで止まる**。飛び越えない。
+だから自動承認の資格を持つ保留でも、**それより前に人手の要る保留があれば、
+順番が来るまで待たされる**。
+
+実際にそうなった。`notes_append`（人手が要る）を先に、`notes_touch`（自動承認の
+資格あり）を後に積んだ状態で `notes_touch` のルールを有効にしたところ、
+**何も起きなかった**。前の関門で止まっていたためである。
+
+止まっていた証拠は、関門を外したときに出た。`notes_append` を人手で承認すると、
+その直後に `notes_touch` が誰にも聞かれずに走った。**間隔は 233 ミリ秒**で、
+人間は一度しか押していない。承認が関門を外し、堰き止められていた保留が
+続けて流れた形である。
+
+**UI の文言はこの場合を想定していない。** ルールを作るときの確認ダイアログは
+「This action will be applied now too」と無条件に述べるが、
+前に関門があれば適用されない。**説明のほうが実装より大雑把だった。**
+
+@証 物証 2026-08-10 append を先に積んだ状態で touch の自動承認を有効にしても適用されず、append を承認した 233 ミリ秒後に touch がサーバへ届いた
+@証 証言 auto-approval.ts:71 A manual gate. Stop rather than skipping ahead to any later auto-eligible action.
+@証 証言 auto-approval.ts:54 nothing is silently applied past a human gate.
+@証 証言 overseer.ts:7584 Clearing this manual gate may unblock later auto-eligible pending actions on the same
+
+## 回収
+
+保留になった操作の結末は、番号を渡して取りに行く。
+**この呼び出しは待たない。** 承認前に呼べば「まだ待っている」がそのまま返る。
+人間が承認するまでポーリングする形になる。
+
+承認済みの結果を受け取ると、それ自体が観測として記録される。
+Gadget が見ていないあいだに走ったので、**渡された時点で読んだことになる**という理屈である。
+
+**この経路だけは実機で走らせていない。** 回収ボタンが保留の行に出るところまでは
+確かめたが、押していない。承認が済んだあとに結果を取りに行く往復は、
+コードを読んで書いたままの状態である。
+
+@証 証言 session.ts:168 is awaiting approval.
+@証 証言 session.ts:184 it becomes an observation at
+
+<<保留中の結果を回収する>>=
+
+async collect(actionId) {
+  return this.note(
+    summarize("回収 #" + actionId, await this.notes.getActionResult(actionId)));
+}
+@
+
+## 購読と配信
+
+`counter.nw` と同じ形である。渡ってきたスタブは `.dup()` で長命にし、
+切断は `onRpcBroken` で拾って集合から外す。配信の失敗は握り潰す。
+
+@証 証言 agent.ts:431 it is important to call .dup() on the callback stub, in order to obtain a long-lived stub
+
+<<更新の購読を受け付ける>>=
+
+async subscribe(callback) {
+  const held = callback.dup();
+  this.subscribers.add(held);
+  held.onRpcBroken(() => this.subscribers.delete(held));
+  return this.getLog();
+}
+@
+
+<<全員に配信する>>=
+
+broadcast(log) {
+  for (const s of this.subscribers) {
+    s.update(log).catch(() => {});
+  }
+}
+@
+
+---
+
+## ブラウザ側の全体像
+
+`counter.nw` と同じく、画面は全部 JavaScript から組み立てる。
+`gadget` がサーバへの RPC スタブである。
+
+@証 物証 2026-08-10 App タブに三つのボタンと入力欄が描画され、押すとサーバ側の対応するメソッドが走った
+
+<<client.js>>=
+<<画面を組み立てる>>
+<<記録を描き直す>>
+<<サーバからの更新を受け取る>>
+<<接続する>>
+<<最初の記録を取ってきて表示する>>
+@
+
+## 画面
+
+三つの道具にボタンを一つずつ。書き足しには文字列が要るので入力欄を添える。
+
+**入力欄が要るのはサンドボックスの制約でもある。** iframe の中では
+`prompt()` の類が使えないので、文字列を受け取る場所を自分で作るしかない。
+
+@証 証言 agent.ts:423 the iframe sandbox on the client side prohibits modal popup boxes like alert() and confirm()
+
+<<画面を組み立てる>>=
+const style = "font:14px sans-serif";
+document.body.style.cssText = style + ";margin:1rem";
+
+const input = document.createElement("input");
+input.value = "こんにちは";
+input.style.cssText = style + ";padding:.3rem;width:12rem";
+
+function button(label, onclick) {
+  const b = document.createElement("button");
+  b.textContent = label;
+  b.style.cssText = style + ";padding:.4rem .8rem;margin-right:.4rem";
+  b.onclick = onclick;
+  return b;
+}
+
+const controls = document.createElement("div");
+controls.append(
+  button("読む", () => gadget.readNote()),
+  button("書き足す", () => gadget.appendNote(input.value)),
+  button("触る", () => gadget.touchNote()),
+  input);
+
+const table = document.createElement("div");
+table.style.cssText = style + ";margin-top:1rem";
+document.body.append(controls, table);
+@
+
+## 記録の描画
+
+一行ごとに、道具の名前と結果の状態を出す。
+**保留のものには回収ボタンを付ける**。番号を持っているのは保留の行だけである。
+
+状態によって色を変えておくと、承認の前後で何が変わったかが目で追える。
+
+@証 物証 2026-08-10 ok は緑、pending は橙で表示され、pending の行にだけ回収ボタンが出た
+
+<<記録を描き直す>>=
+
+const COLOR = {
+  ok: "#0a0", pending: "#c60", rejected: "#c00", failed: "#c00",
+};
+
+function render(log) {
+  table.textContent = "";
+  for (const row of [...log].reverse()) {
+    const line = document.createElement("div");
+    line.style.cssText = "padding:.25rem 0;border-top:1px solid #ddd";
+
+    const status = document.createElement("b");
+    status.textContent = row.status;
+    status.style.color = COLOR[row.status] ?? "#666";
+
+    const label = document.createElement("span");
+    label.textContent = ` ${row.tool} — ${row.detail ?? ""}`;
+
+    line.append(status, label);
+    if (row.status === "pending" && row.actionId !== undefined) {
+      line.append(button("回収", () => gadget.collect(row.actionId)));
+    }
+    table.append(line);
+  }
+}
+@
+
+## 更新の受け取りと接続
+
+`counter.nw` と同じ形である。再接続を自前で作らない理由もあちらに書いた。
+
+@証 証言 agent.ts:460 calls made while its replacement is being acquired will wait
+
+<<サーバからの更新を受け取る>>=
+
+class Watcher extends RpcTarget {
+  update(log) {
+    render(log);
+  }
+
+  [Symbol.dispose]() {
+    connect();
+  }
+}
+@
+
+<<接続する>>=
+
+async function connect() {
+  render(await gadget.subscribe(new Watcher()));
+}
+@
+
+<<最初の記録を取ってきて表示する>>=
+
+await connect();
+@
+
+---
+
+## 観察した結果
+
+冒頭に挙げた三つは実機で見た。**上の表の「期待される扱い」は期待ではなくなった。**
+
+観察は二方向から取っている。画面に何が出たかと、**接続先のサーバに何が届いたか**である。
+後者が効いた。「保留になった」ことは画面を見れば分かるが、
+**「まだ起きていない」ことは受け側を見ないと分からない**。
+
+- 承認待ちは `Activity` に `Needs review` として並ぶ。
+  なぜ操作として扱われたかの理由も文章で出る
+- 自動承認は効く。ただし**前の関門を越えない**（前節）
+- 読み取りは承認を経ない。押した瞬間にサーバへ届き、値が返った
+
+@証 物証 2026-08-10 画面の表示とモックサーバの着信ログを突き合わせ、三項目すべてを確認した
+
+## それでも確かめていないこと
+
+- **回収の往復。** 保留の結果を取りに行く経路は走らせていない
+- **注釈が嘘だった場合。** 読み書きの判定はサーバの自己申告に依存する。
+  `readOnlyHint` を偽って付けた書き込みは、承認を経ずに走るはずである。
+  **起きないことを確かめたのではなく、起きうる構造だと確かめた**にすぎない。
+  ここは自前のサーバで嘘をつかせれば試せるが、まだやっていない
+- **却下したときの経路。** Deny は一度も押していない

@@ -122,8 +122,14 @@ TS が要るのは Workshop 本体（TSX / Vite / TanStack Router）のみ。
 - **自動的な却下は存在しない**。却下は必ず人間の行為
 - 自動承認は `actionKind.tag` を鍵にする。**`actionKind` は省略可能で、
   タグを持たない action はどのルールにも一致せず、永久に人手の承認を要求する**
+  （**補足** — 永久に手動になる道はもう一つある。タグを持っていても
+  `autoApprovable` が false なら同じく自動承認されない。実例は §2.14）
 - `resolvedBy` に解決者が残る。自動承認の場合は**ルールを有効にした人**が記録される
-- ルールを後から追加すると、一致する pending の action がその場で適用される
+- ~~ルールを後から追加すると、一致する pending の action がその場で適用される~~
+  **訂正（2026-08-10、§2.14）**: 適用されるのは、**その action より前に
+  人手を要する保留がない場合に限る**。ドレイナは id の昇順に見て、
+  自動適用できないものに当たったらそこで止まり、飛び越えない
+  （`auto-approval.ts:70-71`）。実機で確認済み
 - **シミュレーションはプラットフォーム機能ではなく、各 Gatekeeper の自前実装**。
   Google のものだけが本格的（`#simulationCache` を持つ）。
   「承認待ちでもエージェントが進める」の実現度は接続先ごとにばらつく
@@ -548,6 +554,150 @@ pnpm run-local                            # ← 起動するか
 §2.12 の「弱い検査だった」という留保がそのまま当てはまる。移設は
 **環境非依存性の証拠**にはなるが、**証拠の耐久性の証拠にはならない**。
 
+### 2.14 手順2 完了 — 承認 UI を観察した（2026-08-10）
+
+**手順2 の三つの観察項目をすべて実機で見た。** しかも当初の想定と違い、
+**エージェントも LLM の API キーも要らなかった。**
+
+#### エージェントが要らなかった理由
+
+手順2 の原文は「副作用のある操作をエージェントにさせる」だったが、
+承認待ちを作る `submitAction` の呼び出し元は `GatekeeperCaller` 型で、
+`{from: "gadget", gadgetId}` を含む（`overseer.ts:6809-6825`）。
+**Gadget が binding を叩けば pending が立つ。** §2.7 の「エージェントを迂回する」
+筋がここでも通った。
+
+#### 接続先は自作した
+
+`tools/mockportal.mjs` — 依存のない Node 製の MCP サーバ（このリポジトリに同梱）。
+外部アカウントも OAuth も要らない。実害のある副作用は起こさず、メモに文字列を足すだけ。
+
+**`gatekeeper-mcp` ではなく `gatekeeper-mcp-portal` を使った。** 前者は
+`TRUST` を `"byo"` に固定しており（`mcp.ts:77`）、byo では `classifyTool` の
+`autoApprovable` が必ず false になる。つまり URL を貼る方式では
+**自動承認が永久に観察できない**。ポータル側は `MCP_PORTAL_TRUST_ANNOTATIONS=true` で
+`"vetted"` になる。
+
+ローカルの MCP サーバに繋ぐには `MCP_ALLOW_INSECURE=true` が要る。
+`run-dev-server.js:189-195` がこれを `.dev.vars` から gatekeeper へ渡す配線を
+持っており、**ローカル開発を想定した公式の逃げ道**である。
+
+再現手順:
+
+```sh
+# 1. ポータル gatekeeper を有効化（間引きを 1 つ戻す。§2.6 と同じ操作）
+cd reference/cloudflare-os
+mv packages/gatekeeper-mcp-portal/wrangler.jsonc{.disabled,}
+
+# 2. リポジトリルートの .dev.vars（gitignore 済み）
+cat > .dev.vars <<'EOF'
+MCP_ALLOW_INSECURE=true
+MCP_PORTAL_URL=http://127.0.0.1:9977/
+MCP_PORTAL_NAME=Literate Notes Portal
+MCP_PORTAL_AUTH=none
+MCP_PORTAL_TRUST_ANNOTATIONS=true
+EOF
+
+# 3. モックサーバ（別のシェルで）
+node tools/mockportal.mjs
+
+# 4. Workshop
+setsid nohup pnpm run-local &
+```
+
+**この改変はフォークにコミットしていない。** 間引きを維持する判断（§3）と
+衝突するためで、手順2 を再現するときだけ手で戻す。戻し方は上の 1 行。
+
+道具は三つ用意し、注釈で扱いを撃ち分けた。
+
+| 道具 | 注釈 | 判定 |
+|---|---|---|
+| `notes_read` | `readOnlyHint: true` | 観測。承認を経ない |
+| `notes_append` | なし | 操作。**常に手動** |
+| `notes_touch` | `destructiveHint:false`, `idempotentHint:true` | 操作。自動承認の資格あり |
+
+#### 観察できたこと
+
+| 項目 | 結果 |
+|---|---|
+| pending の表示 | `Activity` の `Needs review` に並ぶ。**なぜ操作扱いになったかの理由も文章で出る**（"Treated as an action because the server did not declare it read-only. Nothing has been sent yet."） |
+| 分類の可視化 | grant の画面で `read-only` / `needs approval` のバッジが上表のとおりに付いた |
+| 自動承認の可否 | `notes_touch` の保留にだけ `Always approve` が出た。`notes_append` には出ない |
+| 読み取り | 押した瞬間にサーバへ届き、値が返った。承認を求められない |
+| 書き込み | pending と番号が返るだけで、**サーバには何も届かない** |
+| 承認後 | 承認した瞬間に初めてサーバへ届いた |
+
+**観測は二方向から取った。** 画面に何が出たかと、**接続先のサーバに何が届いたか**。
+後者が効いた。「保留になった」ことは画面で分かるが、
+**「まだ起きていない」ことは受け側を見ないと分からない**。
+
+#### 新しく分かったこと: 自動承認は前の関門を越えない
+
+**これは §2.4 の記述の訂正である**（§2.4 側にも注記した）。
+
+保留を適用するドレイナは、その gatekeeper の保留を **id の昇順に見て、
+自動適用できないものに当たったらそこで止まる**。飛び越えない。
+
+```
+if (record.description.autoApprovable !== true || rule === undefined) {
+  // A manual gate. Stop rather than skipping ahead to any later auto-eligible action.
+  break;
+}
+```
+（`auto-approval.ts:70-71`。同ファイル 54 行に
+"nothing is silently applied past a human gate" と設計意図がある）
+
+実際にそうなった。`notes_append`（人手が要る）を先に、`notes_touch`（資格あり）を
+後に積んだ状態で `notes_touch` のルールを有効にしても、**何も起きなかった**。
+`notes_append` を承認した **233 ミリ秒後**に `notes_touch` が誰にも聞かれずに走った。
+承認が関門を外し、堰き止められていた保留が続けて流れた形である
+（`overseer.ts:7584` に "Clearing this manual gate may unblock later auto-eligible
+pending actions" とある）。
+
+**UI の文言はこの場合を想定していない。** ルール作成の確認ダイアログは
+`This action will be applied now too.` と無条件に述べるが、前に関門があれば
+適用されない。**説明のほうが実装より大雑把だった。** §6.2 が扱ってきた
+「もっともらしい散文が実態とずれる」構図が、プラットフォーム側の UI 文言にも出ている。
+
+なおこれを踏めたのは**ボタンを左から順に押したから**である。逆順なら
+即座に適用され、この挙動には気づかないままだった。事故が仕様を暴いた。
+
+#### `actionKind` の第三の状態
+
+§2.4 は「タグを持たない action はどのルールにも一致せず永久に手動」と記録したが、
+MCP は `actionKindFor` が必ず `scopeTag:toolName` のタグを付ける（`tools.ts:94`）。
+それでも `notes_append` は永久に手動である。**タグはあるが自動承認の資格がない**という、
+§2.4 が想定していなかった状態が存在する。適格性は二つの署名を要求する——
+"Eligibility requires BOTH signals"（`auto-approval.ts:56`）。
+
+#### 環境について分かったこと
+
+- **アカウントは移設で来ない。** `.wrangler/state` は git に入らないので、
+  別マシンで作ったアカウントは存在しない。**ログインではなく新規作成**が要る。
+  `signupsEnabled` は既定 true
+- **管理者名は `admin` に固定。** `run-dev-server.js:235` が
+  `config.vars.ADMINS = ["admin"]` をハードコードしており `.dev.vars` では変えられない。
+  ただし手順2 の範囲（接続・Gadget 作成・承認）は一般ユーザで足りた
+- **dev サーバはセッションに紐づけて起動すると道連れで落ちる。**
+  エージェントのバックグラウンドタスクとして起動すると、セッション終了時に kill される。
+  `setsid nohup pnpm run-local &` で切り離せば生き残る。切り離した場合は
+  §2.6 の孤児対策（`ps -eo pid,etimes,args | grep cloudflare-os`）が自分の責任になる
+
+#### 成果物
+
+`gadgets/notes/notes.nw` — 承認を観察する Gadget の文芸的原本。20 節、
+物証 8 / 証言 20 / 推理 2、未証 1（「それでも確かめていないこと」なので意味的に正しい）。
+**証拠を足しても tangle 出力は 1 文字も動かない**（§6.1 の性質の再確認）。
+
+#### 確かめていないこと
+
+- **回収の往復。** `getActionResult` を押していない。ボタンが出るところまで
+- **却下。** `Deny` を一度も押していない
+- **注釈が嘘だった場合。** 読み書きの判定はサーバの自己申告に依存する。
+  `readOnlyHint` を偽った書き込みは承認を経ずに走るはずである。
+  **起きないことを確かめたのではなく、起きうる構造だと確かめた**にすぎない。
+  自前のサーバなので嘘をつかせれば試せる
+
 ---
 
 ## 3. 未検証・推測にとどまること
@@ -569,6 +719,9 @@ pnpm run-local                            # ← 起動するか
 | Cloudflare AI Gateway の無料枠の範囲 | 未検証。`docs/public-server.md` に "used for the free tier" とあるだけ |
 | `gatekeeper-context` を外すと core が壊れるか | 未検証。壊れる恐れがあるので残している |
 | 間引きを戻して watcher 15 個を立てられるか | 未検証。§2.13 の環境なら乗る計算だが試していない。**メモリの厳しい環境での検証もしたいので、間引きは維持する** |
+| `getActionResult` で結果を回収する往復 | 未検証。回収ボタンが保留の行に出るところまでは見た（§2.14）が、押していない |
+| 却下（`Deny`）したときの経路 | 未検証。一度も押していない |
+| 嘘の `readOnlyHint` が素通りするか | 未検証。読み書きの判定はサーバの自己申告に依存するので、偽れば承認を経ずに走る**はず**。`tools/mockportal.mjs` は自前なので嘘をつかせれば試せる。§2.14 |
 | 有澤誠訳での tangle / weave の訳語 | 不明。原本未確認 |
 
 `tangle` の実行場所については選択肢が 2 つある。
@@ -589,7 +742,9 @@ pnpm run-local                            # ← 起動するか
 | `nwitness` | **証拠を集計する第三の道具**（§6.1）。既定は未証の節だけ、`-a` で全部 |
 | `mkgadget.mjs` | `.gadget` Blueprint を組み立てる（Node）。実機へ載せる経路。詳細は §2.7 |
 | `ckgadget.mjs` | `.gadget` を解いて検証する。`mkgadget` の対。純正の `.gadget` も解ける |
+| `mockportal.mjs` | 手順2 用のモック MCP ポータル（Node、依存なし）。承認フローを外部アカウントなしで観察する。詳細は §2.14 |
 | `counter.nw` | 共有カウンタ Gadget の文芸的原本 ★中心的な成果物 |
+| `notes.nw` | 承認を観察する Gadget の文芸的原本。Gadget と Gatekeeper のあいだを見る（§2.14） |
 | `server.js` / `client.js` | `counter.nw` の tangle 出力 |
 | `counter.html` | `counter.nw` の weave 出力 |
 | `counter.gadget` | 実機へ持ち込む Blueprint。`server.js` / `client.js` を同梱したバイナリ |
@@ -628,15 +783,25 @@ pnpm run-local          # → http://localhost:8787
 
 `packageManager` は pnpm 11.17.0 が指定されている。
 
-### 手順 2: 承認 UI を実際に見る
+### 手順 2: 承認 UI を実際に見る — **完了（2026-08-10）**
 
-Gatekeeper を 1 つ設定して（README の各 gatekeeper パッケージに手順あり）、
-副作用のある操作をエージェントにさせ、Activity パネルの挙動を確認する。
-特に見たい点:
+結果は §2.14。三つの観察項目はすべて見た。
 
-- pending の action がどう表示されるか
-- 自動承認ルールを後から追加したとき、pending がその場で適用される様子
-- `actionKind` を持たない action が「常に手動」として区別されているか
+当初は「副作用のある操作をエージェントにさせる」想定だったが、
+**エージェントも API キーも要らなかった**。Gadget が binding を叩けば
+pending が立つ。接続先も自作の MCP サーバ（`tools/mockportal.mjs`）で足り、
+外部アカウントは要らない。
+
+再現するには `gatekeeper-mcp-portal` を有効化し、`.dev.vars` に
+`MCP_ALLOW_INSECURE` と `MCP_PORTAL_*` を置いて、モックサーバを起動する。
+詳細は §2.14。
+
+- ~~pending の action がどう表示されるか~~ → 見た
+- ~~自動承認ルールを後から追加したとき、pending がその場で適用される様子~~
+  → 見た。**ただし前に人手の関門があると適用されない**（§2.4 を訂正した）
+- ~~`actionKind` を持たない action が「常に手動」として区別されているか~~
+  → MCP は必ずタグを付けるので、この形では試せなかった。代わりに
+  **タグはあるが `autoApprovable` が false** という別の「常に手動」を観察した
 
 ### 手順 3: `counter.nw` を実機に載せる — **完了（2026-08-07）**
 

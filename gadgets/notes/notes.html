@@ -1,0 +1,457 @@
+<!doctype html><meta charset=utf-8>
+<style>body{max-width:44em;margin:2em auto;font-family:serif;line-height:1.7}h1,h2,h3{line-height:1.3;margin:1.8em 0 .6em}h1{border-bottom:2px solid #ccc;padding-bottom:.2em}h2{border-bottom:1px solid #ddd;padding-bottom:.15em}hr{border:0;border-top:1px solid #ddd;margin:2.4em 0}code{background:#f0f0f0;padding:.1em .3em;border-radius:3px;font-family:monospace;font-size:.9em}pre{background:#f4f4f4;padding:.8em;border-left:3px solid #888;font-family:monospace}pre code{background:none;padding:0}b.cn{color:#a00}.ev{margin:.6em 0;padding:.4em .8em;border-left:4px solid;font-size:.9em}.ev .k{font-weight:bold;margin-right:.6em}.ev .src{color:#555;font-family:monospace;font-size:.9em;margin-right:.6em}.ev-物証{border-color:#2a7;background:#f2faf6}.ev-証言{border-color:#c92;background:#fdf8ee}.ev-推理{border-color:#88a;background:#f5f5fa}</style>
+<h1>承認を観察する Gadget</h1>
+<p>
+Gadget が外の世界に触れると何が起きるかを見るための Gadget である。
+<code>counter.nw</code> が Gadget 単体の仕組みを見る道具だったのに対して、
+こちらは <strong>Gadget と Gatekeeper のあいだ</strong>を見る。
+<p>
+見たいのは次の三つで、これは <code>HANDOFF.md</code> §5 手順2 が挙げた項目である。
+<p>
+- 承認待ちの操作が画面にどう出るか
+- 自動承認ルールを後から足したとき、待たされていた操作がその場で通るか
+- 読み取りが本当に承認を経ずに素通りするか
+<p>
+そのために、繋ぐ先には<strong>性質の違う三つの道具</strong>を用意してある。
+接続先は <code>tools/mockportal.mjs</code>（このリポジトリに同梱の、依存のない MCP サーバ）で、
+実害のある副作用は起こさない。メモに文字列を足すだけである。
+<p>
+<h2>なぜエージェントを使わないか</h2>
+<p>
+手順2 の原文は「副作用のある操作をエージェントにさせる」だったが、
+<strong>エージェントは要らない。</strong> 承認待ちの記録を作る <code>submitAction</code> は
+呼び出し元を選ばず、Gadget からの呼び出しもそこに含まれる。
+<code>§2.7</code> で使った「エージェントを迂回する」筋がここでも通る。
+<p>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>overseer.ts:6813</span>from: "gadget";</div>
+<div class="ev ev-推理"><span class=k>推理</span><span class=src>overseer.ts:6809-6825</span>呼び出し元は agent / gadget / user / hook の四つで、gadget はそのうちの一つ</div>
+<p>
+<h2>三つの道具と、その期待される扱い</h2>
+<p>
+MCP のツールが「読み取り」か「承認の要る操作」かは、
+<strong>サーバ自身が付けた注釈だけ</strong>で決まる。判定は一箇所にまとまっていて、
+すべて <code>=== true</code> / <code>=== false</code> の比較である。注釈のないツールは
+どの判定にも当たらず、承認の要る操作として扱われる。
+<p>
+さらに、<strong>自動承認を許されるのは注釈を信用してよい接続先だけ</strong>である。
+利用者が URL を貼る方式（<code>byo</code>）では、書き込みが自動で通ることは決してない。
+<p>
+| 道具 | 注釈 | 期待される扱い |
+|---|---|---|
+| <code>notes_read</code> | <code>readOnlyHint: true</code> | 観測。承認を経ずに走る |
+| <code>notes_append</code> | なし | 操作。<strong>常に手動の承認</strong>が要る |
+| <code>notes_touch</code> | <code>destructiveHint: false</code>, <code>idempotentHint: true</code> | 操作。自動承認ルールを作れる |
+<p>
+三つ目が要るせいで、接続先には <code>gatekeeper-mcp</code> ではなく
+<code>gatekeeper-mcp-portal</code> を使っている。前者は信用の段階が <code>byo</code> に固定されており、
+自動承認が永久に成立しないためである。
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-10</span>grant の画面で read-only / needs approval のバッジが上の表のとおりに付いた</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:73</span>mode: readOnly ? "read" : "action",</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:66-69</span>const autoApprovable = !readOnly &amp;&amp; trust === "vetted" &amp;&amp; annotations.destructiveHint === false &amp;&amp; annotations.idempotentHint === true;</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>mcp.ts:77</span>const TRUST: ServerTrust = "byo";</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>run-dev-server.js:192</span>"MCP_PORTAL_TRUST_ANNOTATIONS", "MCP_ALLOW_INSECURE",</div>
+<p>
+<hr>
+<p>
+<h2>サーバ側の全体像</h2>
+<p>
+<code>counter.nw</code> と同じく Durable Object で、クラス名は <code>Gadget</code> でなければならない。
+<p>
+違うのは <strong><code>this.env</code> を使うこと</strong>である。Gadget はサンドボックスの中にいて
+<code>fetch()</code> でインターネットに出られない。外の世界に触れる道は binding だけで、
+それが <code>this.env</code> に生えている。
+<p>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:398</span>The class must be exported under the name <code>Gadget</code></div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:421</span>a Gadget communicates with the outside world strictly through its "bindings"</div>
+<p>
+<pre><b class=cn>&lt;&lt;server.js&gt;&gt;=</b>
+import { DurableObject } from "cloudflare:workers";
+
+<b class=cn>&lt;&lt;結果を一行にまとめる&gt;&gt;</b>
+
+export class Gadget extends DurableObject {
+  <b class=cn>&lt;&lt;購読者の集合を用意する&gt;&gt;</b>
+  <b class=cn>&lt;&lt;接続先を取り出す&gt;&gt;</b>
+  <b class=cn>&lt;&lt;記録を読む&gt;&gt;</b>
+  <b class=cn>&lt;&lt;記録に一行足す&gt;&gt;</b>
+  <b class=cn>&lt;&lt;メモを読む&gt;&gt;</b>
+  <b class=cn>&lt;&lt;メモに書き足す&gt;&gt;</b>
+  <b class=cn>&lt;&lt;メモを触る&gt;&gt;</b>
+  <b class=cn>&lt;&lt;保留中の結果を回収する&gt;&gt;</b>
+  <b class=cn>&lt;&lt;更新の購読を受け付ける&gt;&gt;</b>
+  <b class=cn>&lt;&lt;全員に配信する&gt;&gt;</b>
+}
+</pre>
+<p>
+<h2>購読者の集合</h2>
+<p>
+<code>counter.nw</code> と同じ理由で、接続中のブラウザから預かったコールバックは
+メモリの集合に置く。接続が切れれば意味を失う情報だからである。
+<p>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:468</span>Memory is OK to use for caching</div>
+<p>
+<pre><b class=cn>&lt;&lt;購読者の集合を用意する&gt;&gt;=</b>
+constructor(ctx, env) {
+  super(ctx, env);
+  this.subscribers = new Set();
+}
+</pre>
+<p>
+<h2>接続先</h2>
+<p>
+binding の<strong>名前は利用者が接続のときに決める</strong>。文書の側からは分からないので、
+<code>NOTES</code> という名前を要求することにして、無ければその旨を投げる。
+<p>
+推測して拾いに行くこともできるが、やらない。Gadget の env には別の binding も
+生えうるし、間違った相手に副作用を送るより、繋ぎ方が違うと画面に出るほうがよい。
+<p>
+<div class="ev ev-推理"><span class=k>推理</span><span class=src>agent.ts:421</span>binding は this.env の属性として現れるので、名前が合わなければ undefined になる</div>
+<p>
+<pre><b class=cn>&lt;&lt;接続先を取り出す&gt;&gt;=</b>
+
+get notes() {
+  const binding = this.env.NOTES;
+  if (!binding) {
+    throw new Error(
+      "NOTES という名前の接続がない。Connections で名前を NOTES にして繋ぐこと。");
+  }
+  return binding;
+}
+</pre>
+<p>
+<h2>記録</h2>
+<p>
+三つの道具を呼んだ結果を、そのまま画面に出すために貯めておく。
+これは<strong>再起動を跨いで残ってほしい</strong>ので、メモリではなくストレージに置く。
+承認は人間が別の画面で行うため、Gadget が待っているあいだにコードが
+入れ替わることもありうる。
+<p>
+古いものから捨てて 20 件だけ持つ。観察用なので全部は要らない。
+<p>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:468</span>ALWAYS store server state in Durable Object storage, not just in memory</div>
+<p>
+<pre><b class=cn>&lt;&lt;記録を読む&gt;&gt;=</b>
+
+async getLog() {
+  return (await this.ctx.storage.get("log")) ?? [];
+}
+</pre>
+<p>
+<pre><b class=cn>&lt;&lt;記録に一行足す&gt;&gt;=</b>
+
+async note(entry) {
+  const log = [...(await this.getLog()), { at: new Date().toISOString(), ...entry }];
+  const trimmed = log.slice(-20);
+  await this.ctx.storage.put("log", trimmed);
+  this.broadcast(trimmed);
+  return trimmed;
+}
+</pre>
+<p>
+<h2>呼び出しの結果</h2>
+<p>
+三つの道具はどれも同じ形の結果を返す。<code>status</code> が <code>ok</code> なら中身が入っており、
+それ以外なら人間向けの説明が入っている。<strong>保留のときだけ <code>actionId</code> が付く</strong>ので、
+それを覚えておけばあとで結果を取りに行ける。
+<p>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>session.ts:149</span>needs approval. Poll getActionResult(</div>
+<p>
+<pre><b class=cn>&lt;&lt;結果を一行にまとめる&gt;&gt;=</b>
+function summarize(tool, result) {
+  return {
+    tool,
+    status: result.status,
+    actionId: result.actionId,
+    detail: result.status === "ok" ? result.text : result.message,
+  };
+}
+</pre>
+<p>
+<h2>読み取り</h2>
+<p>
+<code>notes_read</code> は読み取りとして注釈されているので、承認を経ずにその場で走る。
+<strong>戻り値が <code>pending</code> にならないことが、観察したい事実そのもの</strong>である。
+<p>
+記録は残る。ただし記録されるのは観測であって、承認の対象にはならない。
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-10</span>押すと ok が即座に返り、モックサーバに tools/call notes_read が届いた。承認は求められなかった</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:73</span>mode: readOnly ? "read" : "action",</div>
+<p>
+<pre><b class=cn>&lt;&lt;メモを読む&gt;&gt;=</b>
+
+async readNote() {
+  return this.note(summarize("notes_read", await this.notes.callTool("notes_read", {})));
+}
+</pre>
+<p>
+<h2>書き足し</h2>
+<p>
+<code>notes_append</code> には注釈が一つも付いていない。したがって承認の要る操作になり、
+接続先が信用されていても自動承認の対象にはならない。<strong>何度押しても手動の承認が要る</strong>、
+というのがこの道具の役目である。
+<p>
+呼び出しはすぐ返ってくる。<strong>返ってくるのは結果ではなく <code>pending</code> と番号</strong>で、
+実際に走ったかどうかはこの時点では分からない。
+<p>
+<strong>走っていないことを外から確かめた。</strong> 押した直後、接続先のサーバには
+何も届いていなかった。承認 UI の説明文も
+「Nothing has been sent yet」と述べている。呼び出しは gatekeeper の手前で
+止められ、保留として積まれるだけである。
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-10</span>押すと pending と番号が返り、モックサーバ側の着信は一件も増えなかった</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:66-69</span>const autoApprovable = !readOnly &amp;&amp; trust === "vetted" &amp;&amp; annotations.destructiveHint === false &amp;&amp; annotations.idempotentHint === true;</div>
+<p>
+<pre><b class=cn>&lt;&lt;メモに書き足す&gt;&gt;=</b>
+
+async appendNote(text) {
+  return this.note(
+    summarize("notes_append", await this.notes.callTool("notes_append", { text })));
+}
+</pre>
+<p>
+<h2>触る</h2>
+<p>
+<code>notes_touch</code> は「壊さない」「何度やっても同じ」と注釈してある。
+接続先が信用されている場合に限り、この二つが揃うと自動承認の候補になる。
+<p>
+<strong>同じ <code>pending</code> から始まる</strong>ことに注意する。自動承認ルールを作る前は
+<code>notes_append</code> と見分けがつかない。違いが出るのはルールを足したあとである。
+<p>
+違いは承認 UI に現れた。<strong>この道具の保留にだけ <code>Always approve</code> の選択肢が出る。</strong>
+<code>notes_append</code> の保留には出ない。注釈を信用してよい接続先であっても、
+注釈のないツールは自動承認の資格を持たないためである。
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-10</span>押すと pending。Activity ではこの道具の保留にだけ Always approve が現れ、notes_append には現れなかった</div>
+<p>
+<pre><b class=cn>&lt;&lt;メモを触る&gt;&gt;=</b>
+
+async touchNote() {
+  return this.note(summarize("notes_touch", await this.notes.callTool("notes_touch", {})));
+}
+</pre>
+<p>
+<h2>自動承認は前の関門を越えない</h2>
+<p>
+<strong>ルールを作れば待っている保留がすぐ通る、とは限らない。</strong>
+<p>
+保留を適用する処理は、その gatekeeper の保留を **id の昇順に見て、
+自動適用できないものに当たったらそこで止まる**。飛び越えない。
+だから自動承認の資格を持つ保留でも、**それより前に人手の要る保留があれば、
+順番が来るまで待たされる**。
+<p>
+実際にそうなった。<code>notes_append</code>（人手が要る）を先に、<code>notes_touch</code>（自動承認の
+資格あり）を後に積んだ状態で <code>notes_touch</code> のルールを有効にしたところ、
+<strong>何も起きなかった</strong>。前の関門で止まっていたためである。
+<p>
+止まっていた証拠は、関門を外したときに出た。<code>notes_append</code> を人手で承認すると、
+その直後に <code>notes_touch</code> が誰にも聞かれずに走った。<strong>間隔は 233 ミリ秒</strong>で、
+人間は一度しか押していない。承認が関門を外し、堰き止められていた保留が
+続けて流れた形である。
+<p>
+<strong>UI の文言はこの場合を想定していない。</strong> ルールを作るときの確認ダイアログは
+「This action will be applied now too」と無条件に述べるが、
+前に関門があれば適用されない。<strong>説明のほうが実装より大雑把だった。</strong>
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-10</span>append を先に積んだ状態で touch の自動承認を有効にしても適用されず、append を承認した 233 ミリ秒後に touch がサーバへ届いた</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>auto-approval.ts:71</span>A manual gate. Stop rather than skipping ahead to any later auto-eligible action.</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>auto-approval.ts:54</span>nothing is silently applied past a human gate.</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>overseer.ts:7584</span>Clearing this manual gate may unblock later auto-eligible pending actions on the same</div>
+<p>
+<h2>回収</h2>
+<p>
+保留になった操作の結末は、番号を渡して取りに行く。
+<strong>この呼び出しは待たない。</strong> 承認前に呼べば「まだ待っている」がそのまま返る。
+人間が承認するまでポーリングする形になる。
+<p>
+承認済みの結果を受け取ると、それ自体が観測として記録される。
+Gadget が見ていないあいだに走ったので、<strong>渡された時点で読んだことになる</strong>という理屈である。
+<p>
+<strong>この経路だけは実機で走らせていない。</strong> 回収ボタンが保留の行に出るところまでは
+確かめたが、押していない。承認が済んだあとに結果を取りに行く往復は、
+コードを読んで書いたままの状態である。
+<p>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>session.ts:168</span>is awaiting approval.</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>session.ts:184</span>it becomes an observation at</div>
+<p>
+<pre><b class=cn>&lt;&lt;保留中の結果を回収する&gt;&gt;=</b>
+
+async collect(actionId) {
+  return this.note(
+    summarize("回収 #" + actionId, await this.notes.getActionResult(actionId)));
+}
+</pre>
+<p>
+<h2>購読と配信</h2>
+<p>
+<code>counter.nw</code> と同じ形である。渡ってきたスタブは <code>.dup()</code> で長命にし、
+切断は <code>onRpcBroken</code> で拾って集合から外す。配信の失敗は握り潰す。
+<p>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:431</span>it is important to call .dup() on the callback stub, in order to obtain a long-lived stub</div>
+<p>
+<pre><b class=cn>&lt;&lt;更新の購読を受け付ける&gt;&gt;=</b>
+
+async subscribe(callback) {
+  const held = callback.dup();
+  this.subscribers.add(held);
+  held.onRpcBroken(() =&gt; this.subscribers.delete(held));
+  return this.getLog();
+}
+</pre>
+<p>
+<pre><b class=cn>&lt;&lt;全員に配信する&gt;&gt;=</b>
+
+broadcast(log) {
+  for (const s of this.subscribers) {
+    s.update(log).catch(() =&gt; {});
+  }
+}
+</pre>
+<p>
+<hr>
+<p>
+<h2>ブラウザ側の全体像</h2>
+<p>
+<code>counter.nw</code> と同じく、画面は全部 JavaScript から組み立てる。
+<code>gadget</code> がサーバへの RPC スタブである。
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-10</span>App タブに三つのボタンと入力欄が描画され、押すとサーバ側の対応するメソッドが走った</div>
+<p>
+<pre><b class=cn>&lt;&lt;client.js&gt;&gt;=</b>
+<b class=cn>&lt;&lt;画面を組み立てる&gt;&gt;</b>
+<b class=cn>&lt;&lt;記録を描き直す&gt;&gt;</b>
+<b class=cn>&lt;&lt;サーバからの更新を受け取る&gt;&gt;</b>
+<b class=cn>&lt;&lt;接続する&gt;&gt;</b>
+<b class=cn>&lt;&lt;最初の記録を取ってきて表示する&gt;&gt;</b>
+</pre>
+<p>
+<h2>画面</h2>
+<p>
+三つの道具にボタンを一つずつ。書き足しには文字列が要るので入力欄を添える。
+<p>
+<strong>入力欄が要るのはサンドボックスの制約でもある。</strong> iframe の中では
+<code>prompt()</code> の類が使えないので、文字列を受け取る場所を自分で作るしかない。
+<p>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:423</span>the iframe sandbox on the client side prohibits modal popup boxes like alert() and confirm()</div>
+<p>
+<pre><b class=cn>&lt;&lt;画面を組み立てる&gt;&gt;=</b>
+const style = "font:14px sans-serif";
+document.body.style.cssText = style + ";margin:1rem";
+
+const input = document.createElement("input");
+input.value = "こんにちは";
+input.style.cssText = style + ";padding:.3rem;width:12rem";
+
+function button(label, onclick) {
+  const b = document.createElement("button");
+  b.textContent = label;
+  b.style.cssText = style + ";padding:.4rem .8rem;margin-right:.4rem";
+  b.onclick = onclick;
+  return b;
+}
+
+const controls = document.createElement("div");
+controls.append(
+  button("読む", () =&gt; gadget.readNote()),
+  button("書き足す", () =&gt; gadget.appendNote(input.value)),
+  button("触る", () =&gt; gadget.touchNote()),
+  input);
+
+const table = document.createElement("div");
+table.style.cssText = style + ";margin-top:1rem";
+document.body.append(controls, table);
+</pre>
+<p>
+<h2>記録の描画</h2>
+<p>
+一行ごとに、道具の名前と結果の状態を出す。
+<strong>保留のものには回収ボタンを付ける</strong>。番号を持っているのは保留の行だけである。
+<p>
+状態によって色を変えておくと、承認の前後で何が変わったかが目で追える。
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-10</span>ok は緑、pending は橙で表示され、pending の行にだけ回収ボタンが出た</div>
+<p>
+<pre><b class=cn>&lt;&lt;記録を描き直す&gt;&gt;=</b>
+
+const COLOR = {
+  ok: "#0a0", pending: "#c60", rejected: "#c00", failed: "#c00",
+};
+
+function render(log) {
+  table.textContent = "";
+  for (const row of [...log].reverse()) {
+    const line = document.createElement("div");
+    line.style.cssText = "padding:.25rem 0;border-top:1px solid #ddd";
+
+    const status = document.createElement("b");
+    status.textContent = row.status;
+    status.style.color = COLOR[row.status] ?? "#666";
+
+    const label = document.createElement("span");
+    label.textContent = ` ${row.tool} — ${row.detail ?? ""}`;
+
+    line.append(status, label);
+    if (row.status === "pending" &amp;&amp; row.actionId !== undefined) {
+      line.append(button("回収", () =&gt; gadget.collect(row.actionId)));
+    }
+    table.append(line);
+  }
+}
+</pre>
+<p>
+<h2>更新の受け取りと接続</h2>
+<p>
+<code>counter.nw</code> と同じ形である。再接続を自前で作らない理由もあちらに書いた。
+<p>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:460</span>calls made while its replacement is being acquired will wait</div>
+<p>
+<pre><b class=cn>&lt;&lt;サーバからの更新を受け取る&gt;&gt;=</b>
+
+class Watcher extends RpcTarget {
+  update(log) {
+    render(log);
+  }
+
+  [Symbol.dispose]() {
+    connect();
+  }
+}
+</pre>
+<p>
+<pre><b class=cn>&lt;&lt;接続する&gt;&gt;=</b>
+
+async function connect() {
+  render(await gadget.subscribe(new Watcher()));
+}
+</pre>
+<p>
+<pre><b class=cn>&lt;&lt;最初の記録を取ってきて表示する&gt;&gt;=</b>
+
+await connect();
+</pre>
+<p>
+<hr>
+<p>
+<h2>観察した結果</h2>
+<p>
+冒頭に挙げた三つは実機で見た。<strong>上の表の「期待される扱い」は期待ではなくなった。</strong>
+<p>
+観察は二方向から取っている。画面に何が出たかと、<strong>接続先のサーバに何が届いたか</strong>である。
+後者が効いた。「保留になった」ことは画面を見れば分かるが、
+<strong>「まだ起きていない」ことは受け側を見ないと分からない</strong>。
+<p>
+- 承認待ちは <code>Activity</code> に <code>Needs review</code> として並ぶ。
+  なぜ操作として扱われたかの理由も文章で出る
+- 自動承認は効く。ただし<strong>前の関門を越えない</strong>（前節）
+- 読み取りは承認を経ない。押した瞬間にサーバへ届き、値が返った
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-10</span>画面の表示とモックサーバの着信ログを突き合わせ、三項目すべてを確認した</div>
+<p>
+<h2>それでも確かめていないこと</h2>
+<p>
+- <strong>回収の往復。</strong> 保留の結果を取りに行く経路は走らせていない
+- <strong>注釈が嘘だった場合。</strong> 読み書きの判定はサーバの自己申告に依存する。
+  <code>readOnlyHint</code> を偽って付けた書き込みは、承認を経ずに走るはずである。
+  <strong>起きないことを確かめたのではなく、起きうる構造だと確かめた</strong>にすぎない。
+  ここは自前のサーバで嘘をつかせれば試せるが、まだやっていない
+- <strong>却下したときの経路。</strong> Deny は一度も押していない
