@@ -48,7 +48,7 @@ MCP のツールが「読み取り」か「承認の要る操作」かは、
 @証 証言 tools.ts:73 mode: readOnly ? "read" : "action",
 @証 証言 tools.ts:66-69 const autoApprovable = !readOnly && trust === "vetted" && annotations.destructiveHint === false && annotations.idempotentHint === true;
 @証 証言 mcp.ts:77 const TRUST: ServerTrust = "byo";
-@証 証言 run-dev-server.js:192 "MCP_PORTAL_TRUST_ANNOTATIONS", "MCP_ALLOW_INSECURE",
+@証 証言 run-dev-server.js:203 "MCP_PORTAL_TRUST_ANNOTATIONS", "MCP_ALLOW_INSECURE",
 
 ---
 

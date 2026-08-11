@@ -584,7 +584,7 @@ pnpm run-local                            # ← 起動するか
 `"vetted"` になる。
 
 ローカルの MCP サーバに繋ぐには `MCP_ALLOW_INSECURE=true` が要る。
-`run-dev-server.js:189-195` — `"gatekeeper-mcp": ["MCP_ALLOW_INSECURE"]` — が
+`run-dev-server.js:200-206` — `"gatekeeper-mcp": ["MCP_ALLOW_INSECURE"]` — が
 これを `.dev.vars` から gatekeeper へ渡す配線を持っており、**ローカル開発を想定した公式の逃げ道**である。
 
 再現手順:
@@ -679,7 +679,7 @@ MCP は `actionKindFor` が必ず `scopeTag:toolName` のタグを付ける（`t
 - **アカウントは移設で来ない。** `.wrangler/state` は git に入らないので、
   別マシンで作ったアカウントは存在しない。**ログインではなく新規作成**が要る。
   `signupsEnabled` は既定 true
-- **管理者名は `admin` に固定。** `run-dev-server.js:235` — `config.vars.ADMINS = ["admin"];`
+- **管理者名は `admin` に固定。** `run-dev-server.js:246` — `config.vars.ADMINS = ["admin"];`
   — がハードコードしており `.dev.vars` では変えられない。
   ただし手順2 の範囲（接続・Gadget 作成・承認）は一般ユーザで足りた
 - **dev サーバはセッションに紐づけて起動すると道連れで落ちる。**
@@ -763,6 +763,64 @@ git config --add remote.origin.fetch '+refs/heads/main:refs/remotes/origin/main'
 そして**守られているのは `.nw` だけ**である。事実の大半を抱えているのは
 この HANDOFF のほうで、そちらは無防備だった。§6.1 の弱点表に 4 番目として
 追加した。
+
+### 2.16 三度目の追従で、道具が典拠の移動を捕まえた（2026-08-11）
+
+上流の新着は **5 件**。バグ修正が中心である。
+
+| コミット | 内容 |
+|---|---|
+| `8b08672` | Overseer の DO が死んだとき WebSocket を止める処理の修正（#135） |
+| `575599e` | アンマウント後に解決する ResourcePicker の購読を破棄（#132） |
+| `2508099` | **ローカル開発のカスタムポート修正（#126）** |
+| `e83072f` | PR の自動ラベル付け（#138） |
+| `27648d8` | Bonk OIDC エンドポイントの更新（#122） |
+
+rebase は衝突ゼロ。`main` との差分はリネーム 14 件（0 insertions, 0 deletions）のまま。
+依存に変更がないので `pnpm install` は不要だった。起動も確認した
+（`Ready` まで 46 秒、HTTP 200、暖機後 17〜26ms、エラー 0、gatekeeper 2 つ）。
+
+#### ついに `.nw` の裏取りが本物を捕まえた
+
+**`#126` が `run-dev-server.js` を書き換えた。** これは §2.14 で典拠にしていた
+ファイルである。§2.12 以来「典拠にしているファイルが動いたときが本番」と
+書いてきたが、それが来た。
+
+```
+要確認: 典拠が合わない。上流が変わったか、引用が不正確か。
+      gadgets/notes/notes.nw:51  証言 run-dev-server.js:192
+        引用が run-dev-server.js:192 に見当たらない
+```
+
+**道具が止め、終了コード 1 を返した。** 人間が気づく必要はなかった。
+
+内容は動いておらず、**一律 +11 行ずれただけ**である。ポート設定の一部が
+新設の `scripts/dev-server-config.js` へ移り、その分だけ上にずれた。
+影響した引用は 3 件で、すべて修正した。
+
+| 引用 | 旧 | 新 |
+|---|---|---|
+| `notes.nw` の証言 | `run-dev-server.js:192` | `run-dev-server.js:203` |
+| §2.14 の passthrough | `run-dev-server.js:189-195` | `run-dev-server.js:200-206` |
+| §2.14 の ADMINS | `run-dev-server.js:235` | `run-dev-server.js:246` |
+
+**間引きの前提は無傷。** `findGatekeepers` は依然として
+`gatekeeper-` で始まり `wrangler.jsonc` を持つものだけを拾う（位置は 67 → 78 行）。
+
+#### 三日で三通りの結果が出た
+
+| 日 | 典拠との重なり | 結果 |
+|---|---|---|
+| 8/09（§2.12） | なし | 通った。ただし**当たらなかっただけ** |
+| 8/10（§2.15） | `.nw` はなし、HANDOFF はあり | **機械の外で 3 件腐り、人間が手で見つけた** |
+| 8/11（本節） | `.nw` にあり | **機械が捕まえた。人間は気づく必要がなかった** |
+
+前日に Markdown まで守備範囲を広げておいたので、今回は
+`.nw` と HANDOFF の両方が同じ検査を受けている。8/10 と同じことが起きても
+今度は機械が止める。
+
+**道具は入れた翌日に働いた。** 弱点 3（証拠の風化）への対処は、
+もはや「起きるかもしれない事態への備え」ではなく、**日常的に発火する装置**である。
 
 ---
 
