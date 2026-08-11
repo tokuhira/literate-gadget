@@ -1,7 +1,8 @@
 import { DurableObject } from "cloudflare:workers";
 
-function summarize(tool, result) {
+function summarize(kind, tool, result) {
   return {
+    kind,                       // "call"（道具を呼んだ）か "collect"（結果を取りに行った）
     tool,
     status: result.status,
     actionId: result.actionId,
@@ -37,21 +38,25 @@ export class Gadget extends DurableObject {
   }
   
   async readNote() {
-    return this.note(summarize("notes_read", await this.notes.callTool("notes_read", {})));
+    return this.note(
+      summarize("call", "notes_read", await this.notes.callTool("notes_read", {})));
   }
   
   async appendNote(text) {
     return this.note(
-      summarize("notes_append", await this.notes.callTool("notes_append", { text })));
+      summarize("call", "notes_append",
+                await this.notes.callTool("notes_append", { text })));
   }
   
   async touchNote() {
-    return this.note(summarize("notes_touch", await this.notes.callTool("notes_touch", {})));
+    return this.note(
+      summarize("call", "notes_touch", await this.notes.callTool("notes_touch", {})));
   }
   
   async collect(actionId) {
     return this.note(
-      summarize("回収 #" + actionId, await this.notes.getActionResult(actionId)));
+      summarize("collect", "回収 #" + actionId,
+                await this.notes.getActionResult(actionId)));
   }
   
   async subscribe(callback) {

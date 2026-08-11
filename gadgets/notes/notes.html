@@ -155,11 +155,17 @@ async note(entry) {
 それ以外なら人間向けの説明が入っている。<strong>保留のときだけ <code>actionId</code> が付く</strong>ので、
 それを覚えておけばあとで結果を取りに行ける。
 <p>
+<strong>種別も一緒に残す。</strong> 道具を呼んだ記録なのか、結果を取りに行った記録なのかは、
+<code>status</code> からは区別できない。回収の結果もまだ保留なら <code>pending</code> を返し、
+<code>actionId</code> も持っているからである。画面はこの二つを違う扱いにしたいので、
+<strong>推測できない情報は記録する側が書いておく</strong>。
+<p>
 <div class="ev ev-証言"><span class=k>証言</span><span class=src>session.ts:149</span>needs approval. Poll getActionResult(</div>
 <p>
 <pre><b class=cn>&lt;&lt;結果を一行にまとめる&gt;&gt;=</b>
-function summarize(tool, result) {
+function summarize(kind, tool, result) {
   return {
+    kind,                       // "call"（道具を呼んだ）か "collect"（結果を取りに行った）
     tool,
     status: result.status,
     actionId: result.actionId,
@@ -181,7 +187,8 @@ function summarize(tool, result) {
 <pre><b class=cn>&lt;&lt;メモを読む&gt;&gt;=</b>
 
 async readNote() {
-  return this.note(summarize("notes_read", await this.notes.callTool("notes_read", {})));
+  return this.note(
+    summarize("call", "notes_read", await this.notes.callTool("notes_read", {})));
 }
 </pre>
 <p>
@@ -206,7 +213,8 @@ async readNote() {
 
 async appendNote(text) {
   return this.note(
-    summarize("notes_append", await this.notes.callTool("notes_append", { text })));
+    summarize("call", "notes_append",
+              await this.notes.callTool("notes_append", { text })));
 }
 </pre>
 <p>
@@ -227,7 +235,8 @@ async appendNote(text) {
 <pre><b class=cn>&lt;&lt;メモを触る&gt;&gt;=</b>
 
 async touchNote() {
-  return this.note(summarize("notes_touch", await this.notes.callTool("notes_touch", {})));
+  return this.note(
+    summarize("call", "notes_touch", await this.notes.callTool("notes_touch", {})));
 }
 </pre>
 <p>
@@ -330,7 +339,8 @@ Gadget が見ていないあいだに走ったので、<strong>渡された時�
 
 async collect(actionId) {
   return this.note(
-    summarize("回収 #" + actionId, await this.notes.getActionResult(actionId)));
+    summarize("collect", "回収 #" + actionId,
+              await this.notes.getActionResult(actionId)));
 }
 </pre>
 <p>
@@ -417,11 +427,19 @@ document.body.append(controls, table);
 <h2>記録の描画</h2>
 <p>
 一行ごとに、道具の名前と結果の状態を出す。
-<strong>保留のものには回収ボタンを付ける</strong>。番号を持っているのは保留の行だけである。
+<strong>回収ボタンを付けるのは、道具を呼んだ記録が保留のときだけ</strong>である。
+<p>
+当初は「保留かつ番号を持つ行」に付けていたが、<strong>回収の結果にもボタンが付いた</strong>。
+回収の返りもまだ保留なら <code>pending</code> で番号も持つからである。ポーリングとしては
+正しいが、押すたびに同じ見た目の行が増えるだけで読めない。<strong>種別で判定する。</strong>
+<p>
+古い記録には種別がないのでボタンは出ない。既に結末の出た保留ばかりなので
+実害はないが、<strong>記録の形を変えると過去の記録が意味を失う</strong>という一例ではある。
 <p>
 状態によって色を変えておくと、承認の前後で何が変わったかが目で追える。
 <p>
 <div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-10</span>ok は緑、pending は橙で表示され、pending の行にだけ回収ボタンが出た</div>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-11</span>種別で判定するよう直したところ、道具を呼んだ保留にだけボタンが出て、回収の記録には出なくなった。種別を持たない古い記録にも出ない</div>
 <p>
 <pre><b class=cn>&lt;&lt;記録を描き直す&gt;&gt;=</b>
 
@@ -443,7 +461,7 @@ function render(log) {
     label.textContent = ` ${row.tool} — ${row.detail ?? ""}`;
 
     line.append(status, label);
-    if (row.status === "pending" &amp;&amp; row.actionId !== undefined) {
+    if (row.kind === "call" &amp;&amp; row.status === "pending" &amp;&amp; row.actionId !== undefined) {
       line.append(button("回収", () =&gt; gadget.collect(row.actionId)));
     }
     table.append(line);

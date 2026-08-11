@@ -42,7 +42,7 @@ function render(log) {
     label.textContent = ` ${row.tool} — ${row.detail ?? ""}`;
 
     line.append(status, label);
-    if (row.status === "pending" && row.actionId !== undefined) {
+    if (row.kind === "call" && row.status === "pending" && row.actionId !== undefined) {
       line.append(button("回収", () => gadget.collect(row.actionId)));
     }
     table.append(line);
