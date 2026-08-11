@@ -457,10 +457,21 @@ git config --add remote.origin.fetch '+refs/heads/main:refs/remotes/origin/main'
 git fetch --depth=50 origin main          # --unshallow は不要だった
 git merge-base --is-ancestor <土台> origin/main   # 分岐していないか確認
 git tag -f before-sync-<日付> HEAD        # 戻り先を確保
+git push origin before-sync-<日付>        # ← 必須。理由は下記
 git rebase origin/main
 make witness VERIFY=1                     # ← 証拠が古びていないか（リポジトリ側で）
 pnpm run-local                            # ← 起動するか
 ```
+
+**タグの push は省略できない。** rebase するとそれまでの版は
+**どのブランチからも到達不能**になり、ローカルのタグだけが命綱になる。
+push しておけば、その状態が恒久的に取り出せる。
+
+なぜそれが要るかというと、**証拠の検証は参照元の版に依存する**からである。
+`notes.nw` が 8/10 の時点で `run-dev-server.js:192` を指していたのは正しかったが、
+いまの reference では 203 である。過去の literate-gadget をチェックアウトしても
+`setup.sh` はフォークの tip を持ってくるので、**当時正しかった証拠が落ちる**。
+タグがあれば、その版を取り出して再現できる。
 
 `--force-with-lease` で push するときは、**先にリモートを fetch しておくこと**。
 取得していないと「stale info」で拒否される。これは安全装置が正しく働いた形で、
@@ -1651,6 +1662,56 @@ Knuth の `tangle` の核心は提示順序と実行順序の分離だが、
 自由にするほど tangle 後の行番号対応が複雑になる。
 `#line` / Source Map で解けるはずだが、
 Gadget のサンドボックスで機能するかは未検証（§3）。
+
+### 6.5 参照元の版をどう固定するか（2026-08-11 の判断）
+
+**証拠は参照元の版に依存するのに、その版が記録されていない。**
+過去の literate-gadget をチェックアウトしても、`setup.sh` はフォークの
+**tip** を持ってくる。8/10 の `notes.nw` は `run-dev-server.js:192` を
+指していて当時は正しかったが、いまの reference では 203 である。
+**「風化していなかった時点」を再現できない。**
+
+§6.1 の弱点 3（証拠の風化）は、**検出はできるようになったが再現はできない**という
+半分の状態にある。
+
+#### submodule が素直な答えだが、いまは採らない
+
+git submodule は親のツリーに SHA を記録するので、この用途そのものである。
+このプロジェクトの流儀とも合う——規律に頼らず道具に検出させる、というのが
+`nwitness` を書いた判断だった。pin ファイルを自作して `setup.sh` に読ませるより、
+**git 自身が保証する**ほうが筋が通る。
+
+**採らない理由は一つ。フォークを rebase して force-push しているからである。**
+submodule の pin は SHA を指すが、次の同期でその SHA はどのブランチからも
+到達不能になる。**pin が腐る。**
+
+rebase は捨てられない。`git diff main..literate-gadget-minimal` が
+「リネームのみ、0 insertions」で読めることは、同期のたびに確認している
+実際に使っている性質である（§2.12、§2.16、§2.20）。merge に変えると濁る。
+
+#### 代わりにタグを push することにした
+
+**タグさえ押しておけば、rebase で捨てた版も恒久的に取り出せる。**
+`before-sync-<日付>` は元々ローカルで作っていたので、push を手順に足すだけで済む
+（§2.12 に反映済み）。2026-08-11 に既存の 2 つを遡って push した。
+
+| | submodule | タグを push |
+|---|---|---|
+| 版の記録 | 親のコミットが SHA を持つ | 手順書とタグ名 |
+| 検査 | git が保証 | 人間の規律 |
+| rebase との相性 | **悪い**（pin が腐る） | 良い |
+| 手数 | 毎回 2 段のコミット | 同期のとき 1 行 |
+| 構成変更 | `.gitignore` / `setup.sh` / `CLAUDE.md` / 手順書 | 手順書のみ |
+
+**タグは submodule の下位互換ではなく、前提条件である。**
+submodule を後から入れるとしても、到達可能性はタグが担保する。
+だから今日やったことは、将来の選択肢を狭めない。
+
+#### いつ見直すか
+
+**本腰で運用（本家 Cloudflare へのデプロイ）に移るとき**に、DevSecOps の観点から
+まとめて設計し直す。そのとき submodule 化、`.dev.vars` に平文で置いている
+資格情報の扱い、公開範囲などが同時に論点になる。それまではこのままでよい。
 
 ---
 
