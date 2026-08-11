@@ -259,7 +259,7 @@ UI に**エージェントを通さない経路**がある。
 | 画面 | `routes/blueprints.tsx`、`routes/blueprint.$id.tsx` |
 
 なお `Overseer.createGadget(title, chatId?, bindingName?)` は **`chatId` を省略すると
-恒久的に作成される**（`api.ts:1366-1375` に "Without `chatId` the gadget is created permanently"）。`bindingName` 省略時の自動命名は
+恒久的に作成される**（`api.ts:1383-1392` に "Without `chatId` the gadget is created permanently"）。`bindingName` 省略時の自動命名は
 「via the quick model **when configured**, else a generic fallback」とあり、
 **モデル不在が想定された設計**になっている。ただしフロントエンドの `createGadget`
 参照は全て `ChatInterface.tsx`（エージェントのツール呼び出しの描画）で、
@@ -425,7 +425,7 @@ Gadget の画面には **App / Code / Connections** のタブがある。
 | 経路 | Workshop の外側の画面 → `subscribeToCode` | サンドボックス iframe → `gadget` スタブ |
 | コード再デプロイの影響 | 受けない | 壊れる |
 
-`api.ts:1317-1320` に「Interface to a workspace's Overseer … code sync
+`api.ts:1334-1337` に「Interface to a workspace's Overseer … code sync
 (one Yjs doc for the whole workspace)」とある。コード doc はワークスペース全体で
 1 つで、`subscribeToCode` は Overseer のメソッド。一方 `gadget` スタブが繋がる先は
 我々が書いた `Gadget` クラスのインスタンスで、**別の Durable Object**。
@@ -747,7 +747,7 @@ git config --add remote.origin.fetch '+refs/heads/main:refs/remotes/origin/main'
 つまり**この 1 コミットが 3 件を同時に腐らせた**。しかも誰も気づかない。
 `nwitness -v` は `.nw` しか見ないからである。
 
-引用は上の表のとおり修正した（`api.ts:1317-1320`、`api.ts:1366-1375`、
+引用は上の表のとおり修正した（`api.ts:1334-1337`、`api.ts:1383-1392`、
 `BlueprintLandingPage.tsx:574`）。
 
 #### ファイル名で索引を引く設計が効いた例
@@ -970,7 +970,9 @@ UI の表示は `Denied`。** API の `ActionState` は `"rejected"` なので�
 ボタンが一つも出ず、新たに一往復させると呼んだ記録にだけ出た。
 **記録の形を変えると過去の記録が意味を失う**、という一例でもある。
 
-### 2.19 推論の費用を調べた — Workers AI なら鍵なしで始められる（2026-08-11）
+### 2.19 推論の費用を調べた — Workers AI という道（2026-08-11）
+
+**この節は §2.20 で訂正した。** 鍵が要らないのは正しいが、既定で提示されるモデルは Workers **Paid** 専用で、無料プランのままでは動かない。
 
 **API キーを買わずに手順4 へ進める道が見つかった。** ただし当初期待していた
 「AI Gateway の無料枠」とは別物だった。以下はドキュメントとコードを読んで得た事実で、
@@ -1052,6 +1054,97 @@ neurons を見るのが確実。
 `docs/public-server.md` の OAuth 設定一式（`PUBLIC_BASE_URL`、各 gatekeeper の
 リダイレクト URI）が必要になる。
 
+### 2.20 エージェントが動いた — ただし §2.19 は訂正が要る（2026-08-11）
+
+**エージェントが実際に応答した。** LLM プロバイダの鍵は一つも使っていない。
+ただし §2.19 の見立てには**穴があった**ので、先にそれを直す。
+
+#### 訂正: 既定の候補は無料プランで使えなかった
+
+§2.19 は「Cloudflare のアカウントだけで手順4 に着手できる」と結論したが、
+**そのままでは一度も動かせない**。`SUGGESTED_MODELS["cloudflare"]` にあった 2 つは
+Workers **Free** プランでは呼べず、403 になる。
+
+> Model `@cf/moonshotai/kimi-k2.7-code` is **not available on the Workers Free plan**.
+> Upgrade to access this model.
+
+13 モデルを実測して切り分けた。
+
+| 無料プランで | モデル |
+|---|---|
+| **使えない（3）** | `kimi-k2.6` / **`kimi-k2.7-code`** / **`glm-5.2`** |
+| 使える（10） | `llama-3.3-70b-instruct-fp8-fast`（quick model）/ `gpt-oss-120b` / `gpt-oss-20b` / `nemotron-3-120b-a12b` / `gemma-4-26b-a4b-it` / `granite-4.0-h-micro` / `glm-4.7-flash` / `qwen3-30b-a3b-fp8` / `mistral-small-3.1-24b` / `llama-4-scout-17b-16e` |
+
+**候補として提示される 2 つが、ちょうど使えない側に寄っていた。**
+13 のうち 10 は無料で叩けるのに、エージェントには届かない配置である。
+
+#### 対処: フォークで候補を足した
+
+`literate-gadget-minimal` の `2a0ced9`。`SUGGESTED_MODELS["cloudflare"]` に
+無料プランで通るものを 3 つ追加した（`gpt-oss-120b` 128k / `nemotron-3-120b-a12b`
+256k / `glm-4.7-flash` 131k）。既存の 2 つは消さずに残してある。
+
+費用の回避だけが目的ではない。**どの程度のモデルから §1 の仮説が成立するのかを
+測りたい**ので、上下に幅のある候補があるほうがよい。
+
+#### 動いた
+
+`GPT-OSS 120B` を選んで日本語で話しかけたところ、推論の過程を伴って応答した。
+チャットのタイトルも自動生成された——**quick model（`llama-3.3-70b`）も
+無料プランで動く**ということである。
+
+#### 推定が実測に変わった
+
+§2.19 の換算表は推定だったが、ゲートウェイのログから実データが取れた。
+
+| | 値 |
+|---|---|
+| 挨拶 1 往復（`gpt-oss-120b`） | 入力 5,347 / 出力 58 / **$0.0019** |
+| タイトル生成（`llama-3.3-70b`） | 入力 94 / 出力 5 / $0.0000388 |
+| neurons 換算 | $0.0019 ÷ $0.011 × 1000 ≈ **174 neurons** |
+| 1 日 10,000 neurons で | **約 57 往復** |
+
+**三つの記録が一致した。** 画面の表示（5,405 tokens / $0.0019）、ゲートウェイの
+ログ、こちらの curl。§2.14 以来の三方向観測がここでも効いている。
+
+ただし**これは挨拶 1 往復**である。入力 5,347 の大半はシステムプロンプトと
+道具の定義で、`.nw` を読ませればここが増える。`notes.nw` が 500 行 ≈ 2 万トークンと
+見込むと **1 日 10〜15 往復**あたりが現実的な線になる。手順4 には足りる。
+
+#### トークンで踏んだ罠
+
+- **AI Gateway の画面にある「Create an AI Gateway authentication token」は、
+  Account API トークンではない。** これで作ったものは `aig.run` として通らなかった。
+  `Manage account → Account API tokens → Create Token → Custom token` から作り直す
+- 必要な権限は **AI Gateway: Read + Run、Workers AI: Read + Edit**
+- **検証は `/accounts/{id}/tokens/verify` で行う。** `/user/tokens/verify` は
+  ユーザ所有トークン用で、アカウント所有のトークンは "Invalid API Token" になる。
+  ここで一度誤診した
+- **wrangler の起動ログがトークンの先頭 34 文字ほどを平文で出す。**
+  ログを共有するときは伏せること
+
+#### 道具が今度は「こちらの改変」で発火した
+
+`api.ts` に 17 行足した結果、**それより後ろを指していた引用 2 件がずれた**。
+`make witness VERIFY=1` が止め、`api.ts:1317-1320` と `api.ts:1366-1375` を
+名指しした（正しくは +17 行の `1334-1337` と `1383-1392`）。
+
+§2.16 で発火したのは**上流の変更**によるものだったが、今回は**自分たちの改変**である。
+参照元を触れば自分の引用が古びる、という当たり前のことが、
+**当たり前に検出される**状態になっている。
+
+#### 設定（`.dev.vars`、gitignore 済み）
+
+```
+CF_AI_GATEWAY=literate-gadget
+CF_AI_GATEWAY_ACCOUNT_ID=<アカウント ID>
+CF_AI_GATEWAY_API_TOKEN=<Account API トークン>
+CF_AI_GATEWAY_PROVIDERS=cloudflare
+```
+
+`CF_AI_GATEWAY_WAI_DIRECT` は**付けない**。付けると Gateway を迂回して速いが
+費用ログが残らず、上の実測が取れなくなる。
+
 ---
 
 ## 3. 未検証・推測にとどまること
@@ -1069,7 +1162,7 @@ neurons を見るのが確実。
 | ~~`counter.gadget` のインポートが通るか~~ | **検証済みに移動 → §2.8** |
 | ~~Blueprint から生成した Gadget が実際に動くか~~ | **検証済みに移動 → §2.8** |
 | Gadget 画面の `Code` タブでファイルを追加・編集できるか | 未検証。手順4 はここを見るところから |
-| エージェントを動かすモデルの設定手順 | 未検証。設定先は `.dev.vars` と分かっている。**LLM プロバイダの鍵は要らない道が見つかった**（Workers AI、§2.19）が、実際に入れて動かしてはいない |
+| ~~エージェントを動かすモデルの設定手順~~ | **検証済みに移動 → §2.20**。Workers AI で動いた。LLM プロバイダの鍵は使っていない |
 | ~~Cloudflare AI Gateway の無料枠の範囲~~ | **調べた → §2.19**。あれは運営者が利用者に配る枠で、セルフホストは出す側だった。代わりに Workers AI の 1 日 10,000 neurons が使える |
 | Workers AI のモデルで `.nw` の編集がこなせるか | 未検証。ツール呼び出しとコード編集の精度が要る。**§1 の仮説がどの程度のモデルから成立するか**を測る機会でもある（§2.19） |
 | `gatekeeper-context` を外すと core が壊れるか | 未検証。壊れる恐れがあるので残している |
@@ -1198,9 +1291,13 @@ Windows のファイル選択ダイアログからのパス:
 残っているのは後半——**エージェントが `.nw` をどう扱うか**である。
 理想は「エージェントが `.nw` を編集し、tangle して `server.js` に書き戻す」。
 
-**着手できる状態になった（§2.19）。** LLM プロバイダの鍵は要らない。
-Cloudflare のアカウント ID と API トークンだけで Workers AI のモデルが使え、
-1 日 10,000 neurons は無料である。
+**準備は完了した（§2.20）。** エージェントは実際に応答するところまで確認済みで、
+LLM プロバイダの鍵は一つも使っていない。無料プランで動く候補をフォークに足してある。
+1 往復あたり 174 neurons（挨拶時の実測）、`.nw` を読ませても 1 日 10〜15 往復は無料。
+
+**次に開くのは `notes.nw` を置いた Gadget である。** あの workspace には
+`.nw` を 4 つ目のファイルとして置いてあり（§2.9）、エージェントに
+「この文書を読んで」と頼めばそのまま本題に入れる。
 
 見どころは二つに分かれる。
 
@@ -1214,7 +1311,7 @@ Cloudflare のアカウント ID と API トークンだけで Workers AI のモ
 「散文が一次でコードが二次」という構成が、エージェント側から見て
 自然でないということだからである。
 
-なお **Workers AI のモデルでこれがこなせるかは別問題**（§2.19 の留保）。
+なお **Workers AI のモデルでこれがこなせるかは別問題**（§2.19 / §2.20 の留保）。
 できなかった場合、それはモデルの限界なのか構成の限界なのかを
 切り分ける必要がある。
 
@@ -1421,7 +1518,7 @@ WEB が記述するのは**構造**だけで、**振る舞い**は書けない�
 
 ```
 `mcp.ts:77` — `const TRUST: ServerTrust = "byo";`     ← 破線のあとのコード
-`api.ts:1317-1320` に「Interface to … code sync」     ← 「」の引用
+`api.ts:1334-1337` に「Interface to … code sync」     ← 「」の引用
 "Eligibility requires BOTH signals"（`auto-approval.ts:56`）  ← 引用が先、典拠が後
 ```
 
