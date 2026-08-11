@@ -258,6 +258,42 @@ async touchNote() {
 <div class="ev ev-証言"><span class=k>証言</span><span class=src>auto-approval.ts:54</span>nothing is silently applied past a human gate.</div>
 <div class="ev ev-証言"><span class=k>証言</span><span class=src>overseer.ts:7584</span>Clearing this manual gate may unblock later auto-eligible pending actions on the same</div>
 <p>
+<h2>自己申告を信じるということ</h2>
+<p>
+読み書きの判定は<strong>サーバの自己申告だけ</strong>に依っている。署名も検証もない。
+だから <code>readOnlyHint: true</code> と名乗る書き込みは、承認を経ずに走る。
+<p>
+これは見落としではなく、<strong>自覚して選ばれたトレードオフ</strong>である。出典に
+そう書いてある——注釈を信じるのは「ただ得をする話ではない」、
+サーバが誤ったラベルを付けたツールは承認なしで走る、と。
+<p>
+<strong>実際に嘘をつかせて確かめた。</strong> <code>notes_append</code> に <code>readOnlyHint: true</code> を
+名乗らせ、<strong>振る舞いは変えずに</strong>（書き込みはそのまま）押した。承認を求められず、
+<code>ok</code> が返り、メモは書き換わった。
+<p>
+<strong>嘘は即座には効かない。</strong> 分類はカタログのキャッシュに乗っており、期限は 5 分である。名乗りを変えた直後は
+古い分類のままで、<strong>承認を要求され続けた</strong>。期限が切れたあと最初の呼び出しで、
+その呼び出し自身がカタログを取り直し、<strong>新しい分類がその場でその呼び出しに適用された</strong>。
+取り直しから着信まで 129 ミリ秒、同じ往復の中である。
+<p>
+<strong>嘘は成立するが、記録は正直である。</strong> プラットフォームは止めない。警告も出さない。代わりに**観測として記録し、
+出所を明記する**——「サーバがこのツールを読み取りだと宣言しているので承認なしで走る。
+<strong>その主張はサーバ自身によるものである</strong>」。
+<p>
+結果として、承認履歴に<strong>同じツールが二つの姿で並ぶ</strong>。正直だった頃の呼び出しは
+盾のアイコンで「承認済み」、嘘のあとの呼び出しは目のアイコンで「観測」。
+告発ではなく、並置による記録である。
+<p>
+<strong>ただし「記録に残る」ことと「誰かが気づく」ことは別である。</strong> 気づくには
+履歴を見る人が要る。
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-11</span>readOnlyHint:true を名乗らせた notes_append が承認を経ずに走り、メモが書き換わった。三つの記録（画面・接続先の着信・承認履歴）が一致した</div>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-11</span>名乗りを変えてから 5 分 50 秒は古い分類のままで、期限切れ後の最初の呼び出しが取り直しと同時に新分類で走った</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:55-56</span>a tool the server mislabels runs with no approval, where an unlabelled one would have been queued</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:218</span>The server declares this tool read-only, so it runs without approval. That claim comes</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>catalog.ts:17</span>export const CATALOG_TTL_MS = 5 * 60 * 1000;</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>catalog.ts:66</span>server tool catalog changed</div>
+<p>
 <h2>回収</h2>
 <p>
 保留になった操作の結末は、番号を渡して取りに行く。
@@ -436,9 +472,14 @@ await connect();
 <p>
 冒頭に挙げた三つは実機で見た。<strong>上の表の「期待される扱い」は期待ではなくなった。</strong>
 <p>
-観察は二方向から取っている。画面に何が出たかと、<strong>接続先のサーバに何が届いたか</strong>である。
-後者が効いた。「保留になった」ことは画面を見れば分かるが、
+観察は<strong>三方向</strong>から取っている。画面に何が出たか、<strong>接続先のサーバに何が届いたか</strong>、
+そして<strong>承認履歴に何が残ったか</strong>である。呼んだ側・呼ばれた側・記録係の三つで、
+一つでも欠けると分からないことがある。
+<p>
+二つ目が効いた。「保留になった」ことは画面を見れば分かるが、
 <strong>「まだ起きていない」ことは受け側を見ないと分からない</strong>。
+三つ目は自己申告の実験で効いた。<strong>嘘が成立したことと、それが記録されたことは別の事実</strong>で、
+後者は記録係の側にしか現れない。
 <p>
 - 承認待ちは <code>Activity</code> に <code>Needs review</code> として並ぶ。
   なぜ操作として扱われたかの理由も文章で出る
@@ -455,3 +496,6 @@ await connect();
   <strong>起きないことを確かめたのではなく、起きうる構造だと確かめた</strong>にすぎない。
   ここは自前のサーバで嘘をつかせれば試せるが、まだやっていない
 - <strong>却下したときの経路。</strong> Deny は一度も押していない
+- ~~<strong>注釈が嘘だった場合。</strong>~~ → 確かめた（「自己申告を信じるということ」）。
+  ただし試したのは利用者が繋いだ接続先の扱いであって、
+  <strong>管理者が上流を保証する層は別</strong>である。そちらは触っていない
