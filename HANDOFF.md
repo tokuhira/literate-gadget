@@ -1156,6 +1156,68 @@ CF_AI_GATEWAY_PROVIDERS=cloudflare
 `CF_AI_GATEWAY_WAI_DIRECT` は**付けない**。付けると Gateway を迂回して速いが
 費用ログが残らず、上の実測が取れなくなる。
 
+### 2.21 ポート転送はブラウザの記憶を衝突させる（2026-08-11）
+
+別のマシン（ノート PC）から VS Code Remote-SSH のポート転送で繋いだところ、
+**画面は出るのに中身が全部壊れる**という症状が出た。原因は環境側にあり、
+このプロジェクトに固有ではないが、**繰り返し踏む形**なので記録しておく。
+
+#### 症状
+
+- Home は描画される。しかし **workspace 一覧・Blueprint 一覧・モデル選択が
+  すべて失敗**する（"Something went wrong loading…"、"Couldn't load a AI model"）
+- 左下のアバターが `T`（tokuhira）ではなく **`U`**
+- **wrangler のログにエラーが一件もない。** HTTP は全部 200、WebSocket も
+  `101 Switching Protocols` で張れている
+- サーバ側のデータは無傷（`tokuhira` の UserDurableObject に保存キー 16、workspace 4）
+
+**失敗しているのは RPC セッションの層**で、その下の HTTP は健全だった。
+だからサーバのログを見ても何も出ない。
+
+#### 原因: オリジンの衝突
+
+Cookie とセッションの有効範囲は**オリジン（scheme + host + port）**で決まる。
+`http://localhost:8787` は**どのマシンが後ろにいても同じオリジン**である。
+
+ノート PC は 8/9 に**自分で**サーバを走らせており、そのときのセッションを
+保存していた。今日そのノートからデスクトップの 8787 を転送すると、
+ブラウザには同じオリジンに見えるので、**古い Cookie がそのまま送られた**。
+
+**ポート転送は「別のマシンのサービスを同じオリジンに見せる」仕組みなので、
+この衝突は構造的である。**
+
+さらに厄介なのは、フロントエンドが「認証済み」と判断してしまった点である。
+未認証なら本来ログイン画面に落ちる——`__root.tsx:88` に「Not authenticated and not
+a public route」とあり、そこで `LoginPage` へ分岐する。
+
+その分岐が働かなかったので、**認証済みのつもりで全 RPC が失敗する**という
+中途半端な状態になった。
+
+#### 対処
+
+**サイトデータを削除する。** リロード（`Ctrl+Shift+R`）では直らない。
+削除するとログイン画面に落ちるので、そこで入り直す。**サーバ側のデータは
+一切失われない** — 消えるのはブラウザ側のセッションだけである。
+
+#### 再発防止
+
+**転送先のローカルポートをずらす**（例: remote 8787 → local 18787）。
+オリジンが変わるので過去の記憶と衝突しない。
+
+これが安全なのは、`run-local` がビルド済み資産を**同一オリジンで配る**からである。
+`packages/workshop-frontend/src/main.tsx` の `getBackendHost()` は
+`import.meta.env.DEV` のときだけ `VITE_BACKEND_HOST`（既定 `localhost:8787`）を
+使い、それ以外は `window.location.host` を返す。コメントにも
+"Built assets are served from the same origin in both production and run-local mode"
+とある。**ポートを変えても WebSocket の接続先は追随する。**
+
+#### ついでに: VS Code の自動転送は拾わなかった
+
+workerd が `127.0.0.1` にしか bind しないためか、PORTS パネルに自動では現れず、
+`Forward a Port` で手動追加が必要だった（`Origin: User Forwarded`）。
+**転送が要るのは 8787 だけ**である。モック MCP の 9977 は同じマシンの
+workerd が取りに行くだけなので、転送すると余計な露出になる。
+
 ---
 
 ## 3. 未検証・推測にとどまること
