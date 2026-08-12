@@ -29,6 +29,11 @@
 // 使い方: node tools/mockportal.mjs [--port 9977]
 
 import { createServer } from "node:http";
+import { execFileSync } from "node:child_process";
+import { writeFileSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 
 const PROTOCOL_VERSION = "2025-06-18"; // client.ts の MCP_PROTOCOL_VERSION と一致させる
 
@@ -36,10 +41,18 @@ const argv = process.argv.slice(2);
 const portArg = argv.indexOf("--port");
 const PORT = portArg >= 0 ? Number(argv[portArg + 1]) : 9977;
 
-// 上流サーバは 1 つだけ。ポータルは「上流を 1 つ名指しする grant」しか許さない
-// （gatekeeper-mcp-portal/src/config.ts の requireServerScope）。
+// 上流サーバは 2 つ。ポータルは「上流を 1 つ名指しする grant」しか許さないので
+// （gatekeeper-mcp-portal/src/config.ts の requireServerScope）、用途ごとに分ける。
+//
+//   notes  承認フローの観察用（§2.14〜§2.18）
+//   nw     tangle を道具として出す（§2.23 の宿題）
+//
+// 分けた理由は権限である。承認を観察する Gadget に tangle は要らないし、
+// 文書を展開したいエージェントにメモを書き換える権限は要らない。
 const SERVER_ID = "notes";
 const SERVER_NAME = "Notes";
+const NW_ID = "nw";
+const NW_NAME = "Literate Tangler";
 
 // 観察対象の状態。副作用が起きたかどうかを目で見るために持つ。
 let note = "（空）";
@@ -87,6 +100,42 @@ const TOOLS = [
     // destructiveHint false かつ idempotentHint true。vetted なら autoApprovable。
     annotations: { destructiveHint: false, idempotentHint: true },
   },
+  {
+    name: `${NW_ID}_roots`,
+    title: "List root chunks",
+    description:
+      "noweb 文書からルートチャンク（出力ファイル名になっているチャンク）の名前を列挙する。" +
+      "tangle する前に、何を展開できるかを知るために使う。",
+    inputSchema: {
+      type: "object",
+      properties: { source: { type: "string", description: ".nw 文書の全文" } },
+      required: ["source"],
+    },
+    annotations: { readOnlyHint: true },
+  },
+  {
+    name: `${NW_ID}_tangle`,
+    title: "Tangle a literate document",
+    description:
+      "noweb 文書を展開して、指定したルートチャンクの中身（実行されるコード）を返す。" +
+      "文書を編集したあとにこれを呼び、返ってきた内容で対応するファイルを上書きする。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        source: { type: "string", description: ".nw 文書の全文" },
+        root: {
+          type: "string",
+          description: "ルートチャンクの名前。例: client.js / server.js",
+        },
+      },
+      required: ["source", "root"],
+    },
+    // readOnlyHint: true。tangle は純粋な変換で、外に副作用を持たない。
+    // 一時ファイルは作るが即座に消す。**この申告は本当である**——
+    // §2.17 で嘘の readOnlyHint を実験した文書の中で使う道具なので、
+    // ここが正直であることは書いておくに値する。
+    annotations: { readOnlyHint: true },
+  },
 ];
 
 // 取り直しがいつ起きたかを測れるように、全リクエストに時刻を付ける。
@@ -99,6 +148,50 @@ function textResult(text) {
   return { content: [{ type: "text", text }] };
 }
 
+// ---- tangle ----
+//
+// **再実装しない。** `tools/ntangle` をそのまま呼ぶ。
+// 別実装を書けば `make` と結果がずれる余地が生まれ、それは
+// 「文書とコードが仲良く食い違う」という §6.2 の病そのものになる。
+// 同じスクリプトを呼べば一致は構造的に保証される。
+const NTANGLE = new URL("./ntangle", import.meta.url).pathname;
+const MAX_SOURCE = 1024 * 1024;
+
+function tangle(source, root) {
+  if (typeof source !== "string" || !source) throw new Error("source が空です。");
+  if (source.length > MAX_SOURCE) throw new Error("source が大きすぎます。");
+  // ルート名はコマンドの引数になるので、素性を確かめてから渡す。
+  if (typeof root !== "string" || !/^[A-Za-z0-9_.-]+$/.test(root)) {
+    throw new Error(`ルート名が不正です: ${root}`);
+  }
+  const tmp = join(tmpdir(), `nw-${randomUUID()}.nw`);
+  try {
+    writeFileSync(tmp, source, "utf8");
+    // execFileSync なのでシェルを経由しない。引数は配列で渡す。
+    return execFileSync(NTANGLE, ["-r", root, tmp], {
+      encoding: "utf8", maxBuffer: 8 * 1024 * 1024, timeout: 10_000,
+    });
+  } catch (err) {
+    // ntangle が何を言ったかを渡す。呼ぶのはエージェントなので、
+    // 「Command failed」だけでは直しようがない。一時ファイルのパスは
+    // 呼び手にとって意味がないので落とす。
+    const said = String(err.stderr ?? "").replace(new RegExp(tmp, "g"), "(入力)").trim();
+    throw new Error(said || err.message);
+  } finally {
+    try { unlinkSync(tmp); } catch { /* 消せなくても実害はない */ }
+  }
+}
+
+// ルートチャンクの名前を拾う。Makefile が grep でやっているのと同じ判定
+// （`<<名前.拡張子>>=` の形で、拡張子が出力ファイルらしいもの）。
+function rootChunks(source) {
+  const found = new Set();
+  for (const m of String(source).matchAll(/^<<([A-Za-z0-9_.-]+\.(?:js|css|html|md))>>=\s*$/gm)) {
+    found.add(m[1]);
+  }
+  return [...found];
+}
+
 function callTool(name, args) {
   callLog.push({ at: new Date().toISOString(), name, args });
   switch (name) {
@@ -107,8 +200,13 @@ function callTool(name, args) {
       // prose 側も同時に返しておくと、どちらの経路でも拾える。
       return {
         ...textResult(
-          `Available MCP Servers:\n\n- ${SERVER_NAME} (${SERVER_ID}): ✓ enabled\n`),
-        structuredContent: [{ id: SERVER_ID, name: SERVER_NAME, enabled: true }],
+          "Available MCP Servers:\n\n" +
+          `- ${SERVER_NAME} (${SERVER_ID}): ✓ enabled\n` +
+          `- ${NW_NAME} (${NW_ID}): ✓ enabled\n`),
+        structuredContent: [
+          { id: SERVER_ID, name: SERVER_NAME, enabled: true },
+          { id: NW_ID, name: NW_NAME, enabled: true },
+        ],
       };
     case `${SERVER_ID}_read`:
       return textResult(`メモ: ${note}\n更新回数: ${touches}`);
@@ -121,6 +219,25 @@ function callTool(name, args) {
     case `${SERVER_ID}_touch`:
       touches += 1;
       return textResult(`更新回数: ${touches}`);
+
+    case `${NW_ID}_roots`: {
+      const roots = rootChunks(args?.source ?? "");
+      if (!roots.length) {
+        return { ...textResult("ルートチャンクが見つかりません。"), isError: true };
+      }
+      return textResult(roots.join("\n"));
+    }
+    case `${NW_ID}_tangle`: {
+      try {
+        // 展開結果をそのまま返す。呼んだ側がこれで対応ファイルを上書きする。
+        return textResult(tangle(args?.source, args?.root));
+      } catch (err) {
+        // ツール自身の失敗は isError で返す。プロトコル層のエラーにはしない
+        // （client.ts の「A tool-level failure arrives as isError」に合わせる）。
+        return { ...textResult(`tangle に失敗: ${err.message}`), isError: true };
+      }
+    }
+
     default:
       return null; // 呼び出し側で -32602 にする
   }
@@ -200,11 +317,13 @@ const server = createServer((req, res) => {
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`モック MCP ポータル: http://127.0.0.1:${PORT}/`);
-  console.log(`上流サーバ: ${SERVER_NAME} (${SERVER_ID})`);
+  console.log(`上流サーバ: ${SERVER_NAME} (${SERVER_ID}) / ${NW_NAME} (${NW_ID})`);
   console.log("ツール:");
   console.log("  notes_read    readOnlyHint:true            -> 観測（承認なし）");
   console.log("  notes_append  注釈なし                      -> action（常に手動）");
   console.log("  notes_touch   destructive:false idem:true  -> action（自動承認可）");
+  console.log("  nw_roots      readOnlyHint:true            -> 観測。ルート名の列挙");
+  console.log("  nw_tangle     readOnlyHint:true            -> 観測。ntangle を呼ぶ");
   console.log("");
 });
 
