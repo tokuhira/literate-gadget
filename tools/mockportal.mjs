@@ -175,6 +175,11 @@ function tangle(source, root) {
     // ntangle が何を言ったかを渡す。呼ぶのはエージェントなので、
     // 「Command failed」だけでは直しようがない。一時ファイルのパスは
     // 呼び手にとって意味がないので落とす。
+    //
+    // `stdio` は指定していない。execFileSync は既定で err.stderr を埋めるので
+    // これで足りる。ただし同じ内容が親の stderr にも流れるため、
+    // **ntangle の診断はこのサーバのログにも出る**。実害はないが、
+    // ログを見て「エラーが起きている」と早合点しないこと。
     const said = String(err.stderr ?? "").replace(new RegExp(tmp, "g"), "(入力)").trim();
     throw new Error(said || err.message);
   } finally {
