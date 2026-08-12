@@ -34,6 +34,11 @@ function render(log) {
     const line = document.createElement("div");
     line.style.cssText = "padding:.25rem 0;border-top:1px solid #ddd";
 
+    if (row.status === "rejected") {
+      line.style.textDecoration = "line-through";
+      line.style.opacity = "0.6";
+    }
+
     const status = document.createElement("b");
     status.textContent = row.status;
     status.style.color = COLOR[row.status] ?? "#666";

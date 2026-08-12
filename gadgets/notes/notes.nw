@@ -436,6 +436,14 @@ document.body.append(controls, table);
 
 状態によって色を変えておくと、承認の前後で何が変わったかが目で追える。
 
+**却下された行には取り消し線を引く。** 色だけだと「赤い＝失敗した」と読めてしまうが、
+却下は失敗ではなく**実行されなかった**ことである（「観察した結果」）。
+取り消し線は「なかったことになった」という意味に近く、そちらのほうが実態に合う。
+
+この 4 行は**エージェントが書いた**。`<<記録を描き直す>>` という正しいチャンクを選び、
+挿入位置も正確だった。ただし `client.js` の再生成はしていない——**する手段がない**。
+tangle は人間が回した（`HANDOFF.md` §2.23）。
+
 @証 物証 2026-08-10 ok は緑、pending は橙で表示され、pending の行にだけ回収ボタンが出た
 @証 物証 2026-08-11 種別で判定するよう直したところ、道具を呼んだ保留にだけボタンが出て、回収の記録には出なくなった。種別を持たない古い記録にも出ない
 
@@ -450,6 +458,11 @@ function render(log) {
   for (const row of [...log].reverse()) {
     const line = document.createElement("div");
     line.style.cssText = "padding:.25rem 0;border-top:1px solid #ddd";
+
+    if (row.status === "rejected") {
+      line.style.textDecoration = "line-through";
+      line.style.opacity = "0.6";
+    }
 
     const status = document.createElement("b");
     status.textContent = row.status;
