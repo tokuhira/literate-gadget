@@ -21,8 +21,8 @@ Gadget が外の世界に触れると何が起きるかを見るための Gadget
 呼び出し元を選ばず、Gadget からの呼び出しもそこに含まれる。
 `§2.7` で使った「エージェントを迂回する」筋がここでも通る。
 
-@証 証言 overseer.ts:6813 from: "gadget";
-@証 推理 overseer.ts:6809-6825 呼び出し元は agent / gadget / user / hook の四つで、gadget はそのうちの一つ
+@証 証言 overseer.ts:6814 from: "gadget";
+@証 推理 overseer.ts:6810-6826 呼び出し元は agent / gadget / user / hook の四つで、gadget はそのうちの一つ
 
 ## 三つの道具と、その期待される扱い
 
@@ -263,7 +263,7 @@ async touchNote() {
 @証 物証 2026-08-10 append を先に積んだ状態で touch の自動承認を有効にしても適用されず、append を承認した 233 ミリ秒後に touch がサーバへ届いた
 @証 証言 auto-approval.ts:71 A manual gate. Stop rather than skipping ahead to any later auto-eligible action.
 @証 証言 auto-approval.ts:54 nothing is silently applied past a human gate.
-@証 証言 overseer.ts:7584 Clearing this manual gate may unblock later auto-eligible pending actions on the same
+@証 証言 overseer.ts:7598 Clearing this manual gate may unblock later auto-eligible pending actions on the same
 
 ## 自己申告を信じるということ
 

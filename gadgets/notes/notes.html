@@ -23,8 +23,8 @@ Gadget が外の世界に触れると何が起きるかを見るための Gadget
 呼び出し元を選ばず、Gadget からの呼び出しもそこに含まれる。
 <code>§2.7</code> で使った「エージェントを迂回する」筋がここでも通る。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>overseer.ts:6813</span>from: "gadget";</div>
-<div class="ev ev-推理"><span class=k>推理</span><span class=src>overseer.ts:6809-6825</span>呼び出し元は agent / gadget / user / hook の四つで、gadget はそのうちの一つ</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>overseer.ts:6814</span>from: "gadget";</div>
+<div class="ev ev-推理"><span class=k>推理</span><span class=src>overseer.ts:6810-6826</span>呼び出し元は agent / gadget / user / hook の四つで、gadget はそのうちの一つ</div>
 <p>
 <h2>三つの道具と、その期待される扱い</h2>
 <p>
@@ -265,7 +265,7 @@ async touchNote() {
 <div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-10</span>append を先に積んだ状態で touch の自動承認を有効にしても適用されず、append を承認した 233 ミリ秒後に touch がサーバへ届いた</div>
 <div class="ev ev-証言"><span class=k>証言</span><span class=src>auto-approval.ts:71</span>A manual gate. Stop rather than skipping ahead to any later auto-eligible action.</div>
 <div class="ev ev-証言"><span class=k>証言</span><span class=src>auto-approval.ts:54</span>nothing is silently applied past a human gate.</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>overseer.ts:7584</span>Clearing this manual gate may unblock later auto-eligible pending actions on the same</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>overseer.ts:7598</span>Clearing this manual gate may unblock later auto-eligible pending actions on the same</div>
 <p>
 <h2>自己申告を信じるということ</h2>
 <p>

@@ -581,7 +581,7 @@ push しておけば、その状態が恒久的に取り出せる。
 
 手順2 の原文は「副作用のある操作をエージェントにさせる」だったが、
 承認待ちを作る `submitAction` の呼び出し元は `GatekeeperCaller` 型で、
-`{from: "gadget", gadgetId}` を含む（`overseer.ts:6809-6825` — `from: "gadget";`）。
+`{from: "gadget", gadgetId}` を含む（`overseer.ts:6810-6826` — `from: "gadget";`）。
 **Gadget が binding を叩けば pending が立つ。** §2.7 の「エージェントを迂回する」
 筋がここでも通った。
 
@@ -668,7 +668,7 @@ if (record.description.autoApprovable !== true || rule === undefined) {
 後に積んだ状態で `notes_touch` のルールを有効にしても、**何も起きなかった**。
 `notes_append` を承認した **233 ミリ秒後**に `notes_touch` が誰にも聞かれずに走った。
 承認が関門を外し、堰き止められていた保留が続けて流れた形である
-（`overseer.ts:7584` に "Clearing this manual gate may unblock later auto-eligible
+（`overseer.ts:7598` に "Clearing this manual gate may unblock later auto-eligible
 pending actions" とある）。
 
 **UI の文言はこの場合を想定していない。** ルール作成の確認ダイアログは
