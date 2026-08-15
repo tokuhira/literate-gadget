@@ -107,10 +107,46 @@ if ($verify) {
             # （TS のテンプレートリテラル内は ` が \` になっているなど）。
             my $hay = hay_of(@lines[$from-1 .. $to-1]);
             my $needle = norm($e->{text});
-            push @stale, [$e, "引用が $name:$from に見当たらない"]
-                if length $needle && index($hay, $needle) < 0;
+            next unless length $needle && index($hay, $needle) < 0;
+
+            # 合わない。だが「消えた」のか「動いた」のかは別である。
+            # 上流がファイルの上のほうに行を足せば、引用は無傷のまま下へずれる。
+            # 全体を探して、同じ引用がどこにあるかを言う（弱点3への追加対処）。
+            my @hits = find_quote(\@lines, $needle, $to - $from + 1);
+            push @stale, [$e, describe_move($name, $from, $to, \@hits), \@hits];
         }
     }
+}
+
+# 引用が「今どこにあるか」を探す。
+#
+# 典拠が合わないとき、原因は二つに分かれる。**引用が消えた**（上流が書き換えた）か、
+# **引用が動いた**（上流が上のほうに行を足した）か。前者は文書を直す話だが、
+# 後者は行番号を書き換えるだけで済む。区別できれば手間がまるで違う。
+#
+# 同じ幅の窓をずらしながら探す。ファイルは数千行なので素朴な走査で足りる。
+sub find_quote {
+    my ($lines, $needle, $span) = @_;
+    my @hits;
+    for my $i (0 .. @$lines - $span) {
+        push @hits, $i + 1 if index(hay_of(@$lines[$i .. $i + $span - 1]), $needle) >= 0;
+    }
+    return @hits;
+}
+
+# 探した結果を人間向けの一文にする。
+sub describe_move {
+    my ($name, $from, $to, $hits) = @_;
+    my $span = $to - $from + 1;
+    return "引用が $name:$from に見当たらない（どこにもない。上流が書き換えたか、引用が不正確）"
+        if !@$hits;
+    if (@$hits == 1) {
+        my $new = $hits->[0];
+        my $range = $span > 1 ? "$new-" . ($new + $span - 1) : $new;
+        return "引用は $name:$range に移動している（$from から " .
+               ($new > $from ? "+" : "") . ($new - $from) . " 行）";
+    }
+    return "引用が $name の複数箇所にある: " . join(', ', @$hits) . "（人が選ぶこと）";
 }
 
 # 引用の突き合わせ相手（干し草）を作る。複数行に跨る引用のために、
@@ -195,10 +231,12 @@ sub check_markdown {
             for my $frag (split /…|\.\.\./, $anchor) {
                 my $needle = norm($frag);
                 next unless length $needle;
-                if (index($hay, $needle) < 0) {
-                    push @bad, [$where, "引用が見当たらない: $needle"];
-                    last;
-                }
+                next if index($hay, $needle) >= 0;
+                # `.nw` 側と同じく、消えたのか動いたのかを言う。
+                my @hits = find_quote(\@lines, $needle, $to - $from + 1);
+                push @bad, [$where, describe_move($name, $from, $to, \@hits) .
+                                    (@hits ? "" : " — 引用: $needle")];
+                last;
             }
         }
     }
