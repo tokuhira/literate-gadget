@@ -1637,6 +1637,35 @@ curl -s -w 'HTTP %{http_code}\n' \
 エスケープの見積もりで諦めて手計算に切り替えた——という筋である。
 **選択肢 C の設計そのものへの指摘**であり、こちらの想定が外れていた。
 
+これは**実装で裏を取った**。エージェントの自己申告が当てにならないことは
+まさにこの節で示しているので、その申告を根拠にはできない（→ §6.1 弱点 5）。
+
+`agent.ts` の `defineTool` は 12 個で打ち止めである——`readFile` `writeFile`
+`editFile` `webFetch` `observeUserChanges` `describeBinding` `setGadgetBinding`
+`createGadget` `listBlueprints` `executeCode` `listConnectableResources`
+`requestConnection`。**接続した資源ごとにツールが生えるしくみはない。**
+`tools` を組み替える分岐は sub-agent 用の絞り込み 1 箇所だけで、そこも増やす方向ではない。
+
+システムプロンプト自身がそう述べている。
+
+> DO NOT try to guess what API they implement, and DO NOT use executeCode to try to
+> enumerate them programmatically (this will not work, **as they are RPC interfaces**).
+> Use the describeBinding tool to learn what interface they provide before writing any code.
+>
+> — `agent.ts:675`
+
+資源が接続されたときの案内も同じである。
+
+> the resource becomes available as `env.<bindingName>`, which you can describeBinding
+> and **use from executeCode**
+>
+> — `agent.ts:707`
+
+つまり **MCP ツールを「ツールとして」エージェントに見せる道はそもそも用意されていない。**
+`readOnlyHint` による観測／行動の分類は効くが（後述）、それは
+`executeCode` 内の呼び出しを gatekeeper が捕まえた結果であって、
+ツール一覧に載ることとは別である。
+
 そして最後にこう報告した。
 
 > ボタンラベルを「押す」から「ふやす」に変更し、**nw_tangle で再構成した** client.js を書き込みました。
@@ -2098,6 +2127,32 @@ WEB が記述するのは**構造**だけで、**振る舞い**は書けない�
 現状は 引用 26 件、うちアンカーあり 15、要確認 0。残りは `GadgetUI.tsx` への
 推論（`.nw` でも `推理` 扱い）と、道具自身の説明に出てくる例示である。
 **アンカーなしは不良ではなく、証拠の強さが一段低いことの表示**である。
+
+#### 引用ブロックも読めるようにした（2026-08-17）
+
+§2.28 の裏取りで、**長い引用が検査の外に落ちていた**ことに気づいた。
+アンカーは典拠と同じ行になければならない、という条件を 2026-08-10 に足したが、
+数十語の引用はその形に収まらない。実際に使っていたのは次の形である。
+
+```
+> DO NOT try to guess what API they implement …
+>
+> — `agent.ts:675`
+```
+
+これを `nwitness` が読めていなかった。**繰り返し使っている記法なのに検査されない**
+——弱点 4 と同じ構図が、同じ文書の中でもう一度起きていた。
+
+`anchor_blockquote` を足した。出典行が `> —` で始まっていたら、直前の `>` 行を
+遡って引用文とする。あわせて `norm` が強調の `*` も落とすようにした。
+**引用の一部を太字にしただけで照合が外れる**のは道具側の都合である。
+
+働くことは壊して確かめた。`RPC interfaces` を `HTTP interfaces` に変えると
+「引用が `agent.ts:675` に見当たらない」と言う。引用ブロックごと消すと
+アンカーなしに戻る。**通ったことではなく、落ちることで検査の存在を確かめる。**
+
+HANDOFF の引用は 46 件、アンカーあり 15 → **20**、要確認 0。
+`.nw` 三本の裏取り 40 件にも影響はなかった。
 
 #### 探偵という比喩について
 

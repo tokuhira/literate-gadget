@@ -165,6 +165,8 @@ sub norm {                     # 突き合わせ用の正規化
                                # リテラル内で \` になっており、こちらは
                                # Markdown の記法として書く。どちらも飾りなので
                                # 落として中身だけを比べる
+    $s =~ s/\*//g;             # 強調の * も同じ。引用の一部を太字にしても
+                               # 照合が外れないように、両側から落とす
     $s =~ s/\s+/ /g;           # 空白の連なりを 1 個に
     $s =~ s/^ | $//g;
     return $s;
@@ -213,7 +215,9 @@ sub check_markdown {
             my $rest   = substr($l, pos($l));
             my $cont   = ($src[$i+1] // '') . ' ' . ($src[$i+2] // '');
             my $before = substr($l, 0, pos($l) - length("`$name:$from`"));
-            my $anchor = anchor_after($rest, $cont) // anchor_before($before);
+            my $anchor = anchor_after($rest, $cont)
+                      // anchor_before($before)
+                      // anchor_blockquote(\@src, $i);
 
             my $paths = $index{$name};
             if    (!$paths)      { push @bad, [$where, "参照元に $name が見つからない"]; next }
@@ -280,6 +284,22 @@ sub anchor_before {            # 引用のまえ: 「…」（`file:123`）の�
     return $1 if $t =~ /「([^」]+)」[^「」]{0,4}$/;
     return $1 if $t =~ /"([^"]+)"[^"]{0,4}$/;
     return undef;
+}
+
+sub anchor_blockquote {        # 引用ブロックの末尾に「> — `file:123`」と添える形。
+    my ($src, $i) = @_;        # 長い引用はこの形でしか読みやすく置けない
+    return undef unless ($src->[$i] // '') =~ /^\s*>\s*[—–-]\s/;
+    my @q;
+    for (my $j = $i - 1; $j >= 0; $j--) {
+        last unless ($src->[$j] // '') =~ /^\s*>/;
+        my $t = $src->[$j];
+        $t =~ s/^\s*>\s?//;
+        unshift @q, $t;
+    }
+    my $text = join ' ', @q;
+    $text =~ s/\s+/ /g;
+    $text =~ s/^ | $//g;
+    return length($text) ? $text : undef;
 }
 
 sub build_index {              # ファイル名 -> パス（node_modules と dist は除く）
