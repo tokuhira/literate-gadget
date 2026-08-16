@@ -312,8 +312,19 @@ const server = createServer((req, res) => {
     }
 
     const response = handle(message);
-    const label = message.method === "tools/call" ? `tools/call ${message.params?.name}`
-                                                  : message.method;
+    let label = message.method === "tools/call" ? `tools/call ${message.params?.name}`
+                                                : message.method;
+    // nw_tangle は「何を渡されたか」が観測の要点になる。文書の全文を渡したのか、
+    // 要約や断片を渡したのかで、返る結果の正しさが変わる。道具は渡されたものを
+    // 忠実に展開するだけなので、そこはログでしか分からない。
+    if (message.params?.name?.startsWith(`${NW_ID}_`)) {
+      const src = message.params?.arguments?.source;
+      const n = typeof src === "string" ? src.length : 0;
+      const lines = typeof src === "string" ? src.split("\n").length : 0;
+      label += `  [source ${n} 文字 / ${lines} 行`
+             + (message.params?.arguments?.root ? `, root=${message.params.arguments.root}` : "")
+             + "]";
+    }
     console.log(`${stamp()} <- ${label}`);
     res.writeHead(200, { "Content-Type": "application/json" })
        .end(JSON.stringify(response));
