@@ -1,0 +1,70 @@
+<!doctype html><meta charset=utf-8>
+<style>body{max-width:44em;margin:2em auto;font-family:serif;line-height:1.7}h1,h2,h3{line-height:1.3;margin:1.8em 0 .6em}h1{border-bottom:2px solid #ccc;padding-bottom:.2em}h2{border-bottom:1px solid #ddd;padding-bottom:.15em}hr{border:0;border-top:1px solid #ddd;margin:2.4em 0}code{background:#f0f0f0;padding:.1em .3em;border-radius:3px;font-family:monospace;font-size:.9em}pre{background:#f4f4f4;padding:.8em;border-left:3px solid #888;font-family:monospace}pre code{background:none;padding:0}b.cn{color:#a00}.ev{margin:.6em 0;padding:.4em .8em;border-left:4px solid;font-size:.9em}.ev .k{font-weight:bold;margin-right:.6em}.ev .src{color:#555;font-family:monospace;font-size:.9em;margin-right:.6em}.ev-物証{border-color:#2a7;background:#f2faf6}.ev-証言{border-color:#c92;background:#fdf8ee}.ev-推理{border-color:#88a;background:#f5f5fa}</style>
+<h1>tangle を試すための小さな Gadget</h1>
+<p>
+<strong>これは治具である。</strong> エージェントが <code>nw_tangle</code> を呼んで生成物を
+更新できるかを見るためだけに置いてある。
+<p>
+短いことに意味がある。<code>notes.nw</code> は 537 行あり、**エージェントに読ませるだけで
+無料枠の数分の一を使う**（<code>HANDOFF.md</code> §2.25）。同じ往復をここでなら
+数十分の一で試せる。「言われれば tangle できるか」を見るのに、
+長い文書は要らない。
+<p>
+<strong>チャンクを入れ子にしてある。</strong> 一段の平坦な文書だと、断片を渡されても
+それらしい出力が出てしまう。参照を跨がせておけば、**全文を渡さなければ
+<code>undefined chunk</code> で落ちる**——道具に渡されたものが本物かどうかが、
+結果の側から分かる。
+<p>
+<div class="ev ev-推理"><span class=k>推理</span><span class=src>ntangle:1</span>参照が解決できないと ntangle は undefined chunk で異常終了する</div>
+<p>
+<hr>
+<p>
+<h2>サーバ</h2>
+<p>
+押された回数を数えるだけ。数はストレージに置く。
+<p>
+<pre><b class=cn>&lt;&lt;server.js&gt;&gt;=</b>
+import { DurableObject } from "cloudflare:workers";
+
+export class Gadget extends DurableObject {
+  <b class=cn>&lt;&lt;数える&gt;&gt;</b>
+}
+</pre>
+<p>
+<pre><b class=cn>&lt;&lt;数える&gt;&gt;=</b>
+
+async bump() {
+  const n = ((await this.ctx.storage.get("n")) ?? 0) + 1;
+  await this.ctx.storage.put("n", n);
+  return n;
+}
+
+async current() {
+  return (await this.ctx.storage.get("n")) ?? 0;
+}
+</pre>
+<p>
+<h2>画面</h2>
+<p>
+数字とボタンが一つずつ。
+<p>
+<pre><b class=cn>&lt;&lt;client.js&gt;&gt;=</b>
+<b class=cn>&lt;&lt;部品を作る&gt;&gt;</b>
+<b class=cn>&lt;&lt;並べて動かす&gt;&gt;</b>
+</pre>
+<p>
+<pre><b class=cn>&lt;&lt;部品を作る&gt;&gt;=</b>
+const out = document.createElement("div");
+out.style.cssText = "font:3rem sans-serif;text-align:center";
+
+const push = document.createElement("button");
+push.textContent = "押す";
+push.style.cssText = "font:1.2rem sans-serif;display:block;margin:1rem auto";
+</pre>
+<p>
+<pre><b class=cn>&lt;&lt;並べて動かす&gt;&gt;=</b>
+
+push.onclick = async () =&gt; { out.textContent = await gadget.bump(); };
+document.body.append(out, push);
+out.textContent = await gadget.current();
+</pre>

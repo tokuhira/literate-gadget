@@ -1,0 +1,68 @@
+# tangle を試すための小さな Gadget
+
+**これは治具である。** エージェントが `nw_tangle` を呼んで生成物を
+更新できるかを見るためだけに置いてある。
+
+短いことに意味がある。`notes.nw` は 537 行あり、**エージェントに読ませるだけで
+無料枠の数分の一を使う**（`HANDOFF.md` §2.25）。同じ往復をここでなら
+数十分の一で試せる。「言われれば tangle できるか」を見るのに、
+長い文書は要らない。
+
+**チャンクを入れ子にしてある。** 一段の平坦な文書だと、断片を渡されても
+それらしい出力が出てしまう。参照を跨がせておけば、**全文を渡さなければ
+`undefined chunk` で落ちる**——道具に渡されたものが本物かどうかが、
+結果の側から分かる。
+
+@証 物証 ntangle:1 ルートチャンクだけを抜いた断片を渡すと `ntangle: undefined chunk <<部品を作る>>` で終了コード 255
+
+---
+
+## サーバ
+
+押された回数を数えるだけ。数はストレージに置く。
+
+<<server.js>>=
+import { DurableObject } from "cloudflare:workers";
+
+export class Gadget extends DurableObject {
+  <<数える>>
+}
+@
+
+<<数える>>=
+
+async bump() {
+  const n = ((await this.ctx.storage.get("n")) ?? 0) + 1;
+  await this.ctx.storage.put("n", n);
+  return n;
+}
+
+async current() {
+  return (await this.ctx.storage.get("n")) ?? 0;
+}
+@
+
+## 画面
+
+数字とボタンが一つずつ。
+
+<<client.js>>=
+<<部品を作る>>
+<<並べて動かす>>
+@
+
+<<部品を作る>>=
+const out = document.createElement("div");
+out.style.cssText = "font:3rem sans-serif;text-align:center";
+
+const push = document.createElement("button");
+push.textContent = "押す";
+push.style.cssText = "font:1.2rem sans-serif;display:block;margin:1rem auto";
+@
+
+<<並べて動かす>>=
+
+push.onclick = async () => { out.textContent = await gadget.bump(); };
+document.body.append(out, push);
+out.textContent = await gadget.current();
+@
