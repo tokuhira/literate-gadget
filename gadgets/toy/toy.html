@@ -15,13 +15,15 @@
 <code>undefined chunk</code> で落ちる**——道具に渡されたものが本物かどうかが、
 結果の側から分かる。
 <p>
-<div class="ev ev-推理"><span class=k>推理</span><span class=src>ntangle:1</span>参照が解決できないと ntangle は undefined chunk で異常終了する</div>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>ntangle:1</span>ルートチャンクだけを抜いた断片を渡すと <code>ntangle: undefined chunk &lt;&lt;部品を作る&gt;&gt;</code> で終了コード 255</div>
 <p>
 <hr>
 <p>
 <h2>サーバ</h2>
 <p>
 押された回数を数えるだけ。数はストレージに置く。
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>HANDOFF.md:2.28</span>workspace に読ませると App に <code>0</code> が出た。<code>current()</code> は動く。<code>bump()</code> は押して確かめていない</div>
 <p>
 <pre><b class=cn>&lt;&lt;server.js&gt;&gt;=</b>
 import { DurableObject } from "cloudflare:workers";
@@ -47,6 +49,8 @@ async current() {
 <h2>画面</h2>
 <p>
 数字とボタンが一つずつ。
+<p>
+<div class="ev ev-物証"><span class=k>物証</span><span class=src>HANDOFF.md:2.28</span>App に数字とボタンが並んで出た。ボタンの文言はエージェントが「ふやす」に書き換えたもの</div>
 <p>
 <pre><b class=cn>&lt;&lt;client.js&gt;&gt;=</b>
 <b class=cn>&lt;&lt;部品を作る&gt;&gt;</b>
