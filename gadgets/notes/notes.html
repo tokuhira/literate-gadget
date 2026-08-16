@@ -23,8 +23,8 @@ Gadget が外の世界に触れると何が起きるかを見るための Gadget
 呼び出し元を選ばず、Gadget からの呼び出しもそこに含まれる。
 <code>§2.7</code> で使った「エージェントを迂回する」筋がここでも通る。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>overseer.ts:6814</span>from: "gadget";</div>
-<div class="ev ev-推理"><span class=k>推理</span><span class=src>overseer.ts:6810-6826</span>呼び出し元は agent / gadget / user / hook の四つで、gadget はそのうちの一つ</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>overseer.ts:6958</span>from: "gadget";</div>
+<div class="ev ev-推理"><span class=k>推理</span><span class=src>overseer.ts:6954-6970</span>呼び出し元は agent / gadget / user / hook の四つで、gadget はそのうちの一つ</div>
 <p>
 <h2>三つの道具と、その期待される扱い</h2>
 <p>
@@ -47,10 +47,10 @@ MCP のツールが「読み取り」か「承認の要る操作」かは、
 自動承認が永久に成立しないためである。
 <p>
 <div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-10</span>grant の画面で read-only / needs approval のバッジが上の表のとおりに付いた</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:73</span>mode: readOnly ? "read" : "action",</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:66-69</span>const autoApprovable = !readOnly &amp;&amp; trust === "vetted" &amp;&amp; annotations.destructiveHint === false &amp;&amp; annotations.idempotentHint === true;</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:79</span>mode: readOnly ? "read" : "action",</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:72-75</span>const autoApprovable = !readOnly &amp;&amp; trust === "vetted" &amp;&amp; annotations.destructiveHint === false &amp;&amp; annotations.idempotentHint === true;</div>
 <div class="ev ev-証言"><span class=k>証言</span><span class=src>mcp.ts:77</span>const TRUST: ServerTrust = "byo";</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>run-dev-server.js:203</span>"MCP_PORTAL_TRUST_ANNOTATIONS", "MCP_ALLOW_INSECURE",</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>run-dev-server.js:438</span>"MCP_PORTAL_TRUST_ANNOTATIONS", "MCP_ALLOW_INSECURE",</div>
 <p>
 <hr>
 <p>
@@ -62,8 +62,8 @@ MCP のツールが「読み取り」か「承認の要る操作」かは、
 <code>fetch()</code> でインターネットに出られない。外の世界に触れる道は binding だけで、
 それが <code>this.env</code> に生えている。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:398</span>The class must be exported under the name <code>Gadget</code></div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:421</span>a Gadget communicates with the outside world strictly through its "bindings"</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:470</span>The class must be exported under the name <code>Gadget</code></div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:495</span>a Gadget communicates with the outside world strictly through its "bindings"</div>
 <p>
 <pre><b class=cn>&lt;&lt;server.js&gt;&gt;=</b>
 import { DurableObject } from "cloudflare:workers";
@@ -89,7 +89,7 @@ export class Gadget extends DurableObject {
 <code>counter.nw</code> と同じ理由で、接続中のブラウザから預かったコールバックは
 メモリの集合に置く。接続が切れれば意味を失う情報だからである。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:468</span>Memory is OK to use for caching</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:542</span>Memory is OK to use for caching</div>
 <p>
 <pre><b class=cn>&lt;&lt;購読者の集合を用意する&gt;&gt;=</b>
 constructor(ctx, env) {
@@ -106,7 +106,7 @@ binding の<strong>名前は利用者が接続のときに決める</strong>。�
 推測して拾いに行くこともできるが、やらない。Gadget の env には別の binding も
 生えうるし、間違った相手に副作用を送るより、繋ぎ方が違うと画面に出るほうがよい。
 <p>
-<div class="ev ev-推理"><span class=k>推理</span><span class=src>agent.ts:421</span>binding は this.env の属性として現れるので、名前が合わなければ undefined になる</div>
+<div class="ev ev-推理"><span class=k>推理</span><span class=src>agent.ts:495</span>binding は this.env の属性として現れるので、名前が合わなければ undefined になる</div>
 <p>
 <pre><b class=cn>&lt;&lt;接続先を取り出す&gt;&gt;=</b>
 
@@ -129,7 +129,7 @@ get notes() {
 <p>
 古いものから捨てて 20 件だけ持つ。観察用なので全部は要らない。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:468</span>ALWAYS store server state in Durable Object storage, not just in memory</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:542</span>ALWAYS store server state in Durable Object storage, not just in memory</div>
 <p>
 <pre><b class=cn>&lt;&lt;記録を読む&gt;&gt;=</b>
 
@@ -160,7 +160,7 @@ async note(entry) {
 <code>actionId</code> も持っているからである。画面はこの二つを違う扱いにしたいので、
 <strong>推測できない情報は記録する側が書いておく</strong>。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>session.ts:149</span>needs approval. Poll getActionResult(</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>session.ts:159</span>needs approval. If this is running in an</div>
 <p>
 <pre><b class=cn>&lt;&lt;結果を一行にまとめる&gt;&gt;=</b>
 function summarize(kind, tool, result) {
@@ -182,7 +182,7 @@ function summarize(kind, tool, result) {
 記録は残る。ただし記録されるのは観測であって、承認の対象にはならない。
 <p>
 <div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-10</span>押すと ok が即座に返り、モックサーバに tools/call notes_read が届いた。承認は求められなかった</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:73</span>mode: readOnly ? "read" : "action",</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:79</span>mode: readOnly ? "read" : "action",</div>
 <p>
 <pre><b class=cn>&lt;&lt;メモを読む&gt;&gt;=</b>
 
@@ -207,7 +207,7 @@ async readNote() {
 止められ、保留として積まれるだけである。
 <p>
 <div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-10</span>押すと pending と番号が返り、モックサーバ側の着信は一件も増えなかった</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:66-69</span>const autoApprovable = !readOnly &amp;&amp; trust === "vetted" &amp;&amp; annotations.destructiveHint === false &amp;&amp; annotations.idempotentHint === true;</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:72-75</span>const autoApprovable = !readOnly &amp;&amp; trust === "vetted" &amp;&amp; annotations.destructiveHint === false &amp;&amp; annotations.idempotentHint === true;</div>
 <p>
 <pre><b class=cn>&lt;&lt;メモに書き足す&gt;&gt;=</b>
 
@@ -263,9 +263,9 @@ async touchNote() {
 前に関門があれば適用されない。<strong>説明のほうが実装より大雑把だった。</strong>
 <p>
 <div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-10</span>append を先に積んだ状態で touch の自動承認を有効にしても適用されず、append を承認した 233 ミリ秒後に touch がサーバへ届いた</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>auto-approval.ts:71</span>A manual gate. Stop rather than skipping ahead to any later auto-eligible action.</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>auto-approval.ts:54</span>nothing is silently applied past a human gate.</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>overseer.ts:7598</span>Clearing this manual gate may unblock later auto-eligible pending actions on the same</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>auto-approval.ts:73</span>A manual gate. Stop rather than skipping ahead to any later auto-eligible action.</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>auto-approval.ts:56</span>nothing is silently applied past a human gate.</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>overseer.ts:7760</span>Clearing this manual gate may unblock later auto-eligible pending actions on the same</div>
 <p>
 <h2>自己申告を信じるということ</h2>
 <p>
@@ -298,16 +298,22 @@ async touchNote() {
 <p>
 <div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-11</span>readOnlyHint:true を名乗らせた notes_append が承認を経ずに走り、メモが書き換わった。三つの記録（画面・接続先の着信・承認履歴）が一致した</div>
 <div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-11</span>名乗りを変えてから 5 分 50 秒は古い分類のままで、期限切れ後の最初の呼び出しが取り直しと同時に新分類で走った</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:55-56</span>a tool the server mislabels runs with no approval, where an unlabelled one would have been queued</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:218</span>The server declares this tool read-only, so it runs without approval. That claim comes</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:60-61</span>a tool the server mislabels runs with no approval, where an unlabelled one would have been queued</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:230</span>The server declares this tool read-only, so it runs without approval. That claim comes</div>
 <div class="ev ev-証言"><span class=k>証言</span><span class=src>catalog.ts:17</span>export const CATALOG_TTL_MS = 5 * 60 * 1000;</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>catalog.ts:66</span>server tool catalog changed</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>catalog.ts:72</span>server tool catalog changed</div>
 <p>
 <h2>回収</h2>
 <p>
 保留になった操作の結末は、番号を渡して取りに行く。
 <strong>この呼び出しは待たない。</strong> 承認前に呼べば「まだ待っている」がそのまま返る。
-人間が承認するまでポーリングする形になる。
+<p>
+<strong>では誰が待つのか。</strong> ここは Gadget とエージェントで事情が違う。Gadget の画面は
+人間が見ているので、押し直せばよい——だから回収ボタンを置いてある。
+一方エージェントには、<strong>保留を返す文面そのものが指示を出している</strong>。
+2026-08-16 の上流で、その文面が「ポーリングせよ」から
+<strong>「いったん <code>executeCode</code> から抜けろ、承認はチャットに出る」</strong>へ変わった。
+待ち方の設計が、待つ主体に応じて変わったことになる。
 <p>
 承認済みの結果を受け取ると、それ自体が観測として記録される。
 Gadget が見ていないあいだに走ったので、<strong>渡された時点で読んだことになる</strong>という理屈である。
@@ -332,8 +338,8 @@ Gadget が見ていないあいだに走ったので、<strong>渡された時�
 <p>
 <div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-11</span>承認前に回収すると pending と is awaiting approval が返り、接続先の着信は増えなかった</div>
 <div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-11</span>承認後に回収すると ok とサーバの応答が返り、承認履歴に result of notes_append という観測が新たに現れた</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>session.ts:168</span>is awaiting approval.</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>session.ts:184</span>it becomes an observation at</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>session.ts:179</span>is awaiting approval.</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>session.ts:195</span>it becomes an observation at</div>
 <p>
 <pre><b class=cn>&lt;&lt;保留中の結果を回収する&gt;&gt;=</b>
 
@@ -349,7 +355,7 @@ async collect(actionId) {
 <code>counter.nw</code> と同じ形である。渡ってきたスタブは <code>.dup()</code> で長命にし、
 切断は <code>onRpcBroken</code> で拾って集合から外す。配信の失敗は握り潰す。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:431</span>it is important to call .dup() on the callback stub, in order to obtain a long-lived stub</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:505</span>it is important to call .dup() on the callback stub, in order to obtain a long-lived stub</div>
 <p>
 <pre><b class=cn>&lt;&lt;更新の購読を受け付ける&gt;&gt;=</b>
 
@@ -394,7 +400,7 @@ broadcast(log) {
 <strong>入力欄が要るのはサンドボックスの制約でもある。</strong> iframe の中では
 <code>prompt()</code> の類が使えないので、文字列を受け取る場所を自分で作るしかない。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:423</span>the iframe sandbox on the client side prohibits modal popup boxes like alert() and confirm()</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:497</span>the iframe sandbox on the client side prohibits modal popup boxes like alert() and confirm()</div>
 <p>
 <pre><b class=cn>&lt;&lt;画面を組み立てる&gt;&gt;=</b>
 const style = "font:14px sans-serif";
@@ -486,7 +492,7 @@ function render(log) {
 <p>
 <code>counter.nw</code> と同じ形である。再接続を自前で作らない理由もあちらに書いた。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:460</span>calls made while its replacement is being acquired will wait</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:534</span>calls made while its replacement is being acquired will wait</div>
 <p>
 <pre><b class=cn>&lt;&lt;サーバからの更新を受け取る&gt;&gt;=</b>
 

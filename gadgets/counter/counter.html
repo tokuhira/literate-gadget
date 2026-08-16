@@ -19,8 +19,8 @@ Gadget は必ず二つのファイルからなる。<code>server.js</code> は�
 <p>
 クラス名は必ず <code>Gadget</code> でなければならない。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:398</span>The class must be exported under the name <code>Gadget</code></div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:398</span>there is no need to export a separate fetch handler; the Gadgets platform automatically takes care of routing</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:470</span>The class must be exported under the name <code>Gadget</code></div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:470</span>there is no need to export a separate fetch handler; the Gadgets platform automatically takes care of routing</div>
 <div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-07</span>この形のまま実機で動いた</div>
 <p>
 <pre><b class=cn>&lt;&lt;server.js&gt;&gt;=</b>
@@ -41,8 +41,8 @@ export class Gadget extends DurableObject {
 接続中のブラウザから預かったコールバックを保持しておく。
 これはメモリ上の集合でよい。接続が切れれば意味を失う情報だからである。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:468</span>Memory is OK to use for caching</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:460</span>other capabilities passed over RPC in either direction are disposed on disconnect</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:542</span>Memory is OK to use for caching</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:534</span>other capabilities passed over RPC in either direction are disposed on disconnect</div>
 <p>
 <pre><b class=cn>&lt;&lt;購読者の集合を用意する&gt;&gt;=</b>
 constructor(ctx, env) {
@@ -60,7 +60,7 @@ constructor(ctx, env) {
 まだ一度も押されていなければ値は存在しないので、そのときは 0 とみなす。
 <p>
 <div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-07</span>コードを書き換えて再デプロイさせたあとも、リロードすれば数値は保たれていた</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:468</span>ALWAYS store server state in Durable Object storage, not just in memory</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:542</span>ALWAYS store server state in Durable Object storage, not just in memory</div>
 <p>
 <pre><b class=cn>&lt;&lt;現在値を読む&gt;&gt;=</b>
 
@@ -97,7 +97,7 @@ async increment(delta) {
 そこで集合から取り除く。
 <p>
 <div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-07</span>二つのウィンドウで同時に開き、片方のボタンが即座にもう片方へ反映された</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:431</span>it is important to call .dup() on the callback stub, in order to obtain a long-lived stub</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:505</span>it is important to call .dup() on the callback stub, in order to obtain a long-lived stub</div>
 <p>
 <pre><b class=cn>&lt;&lt;更新の購読を受け付ける&gt;&gt;=</b>
 
@@ -147,8 +147,8 @@ HTML ファイルは存在せず、<strong>画面は全部 JavaScript から DOM
 グローバル変数 <code>gadget</code> が最初から用意されていて、これがサーバへの RPC スタブになる。
 <code>gadget.increment(1)</code> と書けば、サーバ側の <code>increment</code> が呼ばれる。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:410</span>The client context is initialized with a special global variable called <code>gadget</code></div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:417</span>there is no index.html. Instead, client.js must build the entire UI using JavaScript code</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:482</span>The client context is initialized with a special global variable called <code>gadget</code></div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:489</span>there is no index.html. Instead, client.js must build the entire UI using JavaScript code</div>
 <div class="ev ev-推理"><span class=k>推理</span><span class=src>GadgetUI.tsx:355-365</span>その <code>gadget</code> の実体は親フレーム側の Proxy で、iframe とは MessagePort で繋がっている</div>
 <p>
 <pre><b class=cn>&lt;&lt;client.js&gt;&gt;=</b>
@@ -194,8 +194,8 @@ document.body.append(display, controls);
 ここでは <code>new Watcher()</code> を作り直している。破棄されたオブジェクトを
 再び渡すより素直だと考えたためで、<strong>どちらが正しいかは確かめていない。</strong>
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:460</span>other capabilities passed over RPC in either direction are disposed on disconnect, and must be re-acquired</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:452</span>Connection lost. Resubscribe using new connection.</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:534</span>other capabilities passed over RPC in either direction are disposed on disconnect, and must be re-acquired</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:526</span>Connection lost. Resubscribe using new connection.</div>
 <p>
 <pre><b class=cn>&lt;&lt;サーバからの更新を受け取る&gt;&gt;=</b>
 
@@ -237,7 +237,7 @@ async function connect() {
 </pre>
 <p>
 <div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-07</span>リトライ版を実機で試したところ、数字もボタンも固まりエラーも出なかった</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:460</span>calls made while its replacement is being acquired will wait</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:534</span>calls made while its replacement is being acquired will wait</div>
 <div class="ev ev-推理"><span class=k>推理</span><span class=src>GadgetUI.tsx:355-365</span>iframe から見える gadget は親フレームの Proxy で、保留中は pending.promise を待つ</div>
 <div class="ev ev-推理"><span class=k>推理</span><span class=src>GadgetUI.tsx:218-238</span>プラットフォーム側は Promise.race で 5 秒待ち、超えたら iframe を再読み込みする</div>
 <p>

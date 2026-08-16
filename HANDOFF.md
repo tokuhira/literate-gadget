@@ -129,7 +129,7 @@ TS が要るのは Workshop 本体（TSX / Vite / TanStack Router）のみ。
   **訂正（2026-08-10、§2.14）**: 適用されるのは、**その action より前に
   人手を要する保留がない場合に限る**。ドレイナは id の昇順に見て、
   自動適用できないものに当たったらそこで止まり、飛び越えない
-  （`auto-approval.ts:70-71` — `autoApprovable !== true || rule === undefined`）。実機で確認済み
+  （`auto-approval.ts:72-73` — `autoApprovable !== true || rule === undefined`）。実機で確認済み
 - **シミュレーションはプラットフォーム機能ではなく、各 Gatekeeper の自前実装**。
   Google のものだけが本格的（`#simulationCache` を持つ）。
   「承認待ちでもエージェントが進める」の実現度は接続先ごとにばらつく
@@ -218,6 +218,11 @@ mv packages/gatekeeper-github/wrangler.jsonc{.disabled,}
 結果、watcher は 15 → 1、空きメモリ 1.4Gi で安定動作した。
 （**その後 2 個になった。** 承認 UI の観察に `gatekeeper-mcp-portal` が要るので
 有効化してある。§2.14）
+
+**2026-08-16 追記。** 上流がビルドを Vite+ に載せ替えたため、
+**UI のビルドはこの間引きを通らなくなった**。`vp run -r` はタスクを宣言している
+パッケージを全部選ぶので、無効化した gatekeeper の UI も作られる。
+間引きが効くのは Worker の起動側だけである（§2.24）。
 なお**手順3 に gatekeeper は不要**である。要るのは手順2 の承認 UI 観察のときだけ。
 
 もう一点。**クラッシュすると `run-dev-server.js` が孤児として生き残り、
@@ -255,11 +260,11 @@ UI に**エージェントを通さない経路**がある。
 | 経路 | 場所 |
 |---|---|
 | `.gadget` のインポート | `BlueprintList.tsx:195` — `importBlueprint` |
-| Blueprint から Gadget 生成 | `BlueprintLandingPage.tsx:574` — `newGadgetFromBlueprint` |
+| Blueprint から Gadget 生成 | `BlueprintLandingPage.tsx:567` — `newGadgetFromBlueprint` |
 | 画面 | `routes/blueprints.tsx`、`routes/blueprint.$id.tsx` |
 
 なお `Overseer.createGadget(title, chatId?, bindingName?)` は **`chatId` を省略すると
-恒久的に作成される**（`api.ts:1383-1392` に "Without `chatId` the gadget is created permanently"）。`bindingName` 省略時の自動命名は
+恒久的に作成される**（`api.ts:1655-1664` に "Without `chatId` the gadget is created permanently"）。`bindingName` 省略時の自動命名は
 「via the quick model **when configured**, else a generic fallback」とあり、
 **モデル不在が想定された設計**になっている。ただしフロントエンドの `createGadget`
 参照は全て `ChatInterface.tsx`（エージェントのツール呼び出しの描画）で、
@@ -365,7 +370,7 @@ Gadget の画面には **App / Code / Connections** のタブがある。
 観察: コードを編集すると、編集していない側のウィンドウは**数字が固まり、
 ボタンも不動になる**。エラーメッセージも出ない。リロードで復旧する。
 
-原因は `agent.ts:460` — `calls made while its replacement is being acquired will wait`
+原因は `agent.ts:534` — `calls made while its replacement is being acquired will wait`
 — つまりプラットフォームがエージェントに与えている説明にある。
 
 > The top-level `gadget` stub survives backend reconnects, and calls made
@@ -404,7 +409,7 @@ Gadget の画面には **App / Code / Connections** のタブがある。
 根拠（節に証拠として記載済み）:
 
 - `GadgetUI.tsx:355-365` — iframe から見える `gadget` は**親フレーム側の Proxy**。
-  再接続中の呼び出しは `pending.promise` を待つ。`agent.ts:460` の
+  再接続中の呼び出しは `pending.promise` を待つ。`agent.ts:534` の
   "will wait" の正体はこれ（推理）
 - `GadgetUI.tsx:218-238` — プラットフォームは `Promise.race` で **5 秒**待ち、
   超えたら `reloadIframe()` する。**提案しかけた設計が既に実装されていた**（推理）
@@ -428,7 +433,7 @@ Gadget の画面には **App / Code / Connections** のタブがある。
 | 経路 | Workshop の外側の画面 → `subscribeToCode` | サンドボックス iframe → `gadget` スタブ |
 | コード再デプロイの影響 | 受けない | 壊れる |
 
-`api.ts:1334-1337` に「Interface to a workspace's Overseer … code sync
+`api.ts:1595-1598` に「Interface to a workspace's Overseer … code sync
 (one Yjs doc for the whole workspace)」とある。コード doc はワークスペース全体で
 1 つで、`subscribeToCode` は Overseer のメソッド。一方 `gadget` スタブが繋がる先は
 我々が書いた `Gadget` クラスのインスタンスで、**別の Durable Object**。
@@ -584,7 +589,7 @@ push しておけば、その状態が恒久的に取り出せる。
 
 手順2 の原文は「副作用のある操作をエージェントにさせる」だったが、
 承認待ちを作る `submitAction` の呼び出し元は `GatekeeperCaller` 型で、
-`{from: "gadget", gadgetId}` を含む（`overseer.ts:6810-6826` — `from: "gadget";`）。
+`{from: "gadget", gadgetId}` を含む（`overseer.ts:6954-6970` — `from: "gadget";`）。
 **Gadget が binding を叩けば pending が立つ。** §2.7 の「エージェントを迂回する」
 筋がここでも通った。
 
@@ -600,7 +605,7 @@ push しておけば、その状態が恒久的に取り出せる。
 `"vetted"` になる。
 
 ローカルの MCP サーバに繋ぐには `MCP_ALLOW_INSECURE=true` が要る。
-`run-dev-server.js:200-206` — `"gatekeeper-mcp": ["MCP_ALLOW_INSECURE"]` — が
+`run-dev-server.js:435-441` — `"gatekeeper-mcp": ["MCP_ALLOW_INSECURE"]` — が
 これを `.dev.vars` から gatekeeper へ渡す配線を持っており、**ローカル開発を想定した公式の逃げ道**である。
 
 再現手順:
@@ -664,14 +669,14 @@ if (record.description.autoApprovable !== true || rule === undefined) {
   break;
 }
 ```
-（`auto-approval.ts:70-71` — `A manual gate. Stop rather than skipping ahead`。
-設計意図は `auto-approval.ts:54` に "nothing is silently applied past a human gate" とある）
+（`auto-approval.ts:72-73` — `A manual gate. Stop rather than skipping ahead`。
+設計意図は `auto-approval.ts:56` に "nothing is silently applied past a human gate" とある）
 
 実際にそうなった。`notes_append`（人手が要る）を先に、`notes_touch`（資格あり）を
 後に積んだ状態で `notes_touch` のルールを有効にしても、**何も起きなかった**。
 `notes_append` を承認した **233 ミリ秒後**に `notes_touch` が誰にも聞かれずに走った。
 承認が関門を外し、堰き止められていた保留が続けて流れた形である
-（`overseer.ts:7598` に "Clearing this manual gate may unblock later auto-eligible
+（`overseer.ts:7760` に "Clearing this manual gate may unblock later auto-eligible
 pending actions" とある）。
 
 **UI の文言はこの場合を想定していない。** ルール作成の確認ダイアログは
@@ -685,17 +690,17 @@ pending actions" とある）。
 #### `actionKind` の第三の状態
 
 §2.4 は「タグを持たない action はどのルールにも一致せず永久に手動」と記録したが、
-MCP は `actionKindFor` が必ず `scopeTag:toolName` のタグを付ける（`tools.ts:94` — `export function actionKindFor(scopeTag: string, toolName: string)`）。
+MCP は `actionKindFor` が必ず `scopeTag:toolName` のタグを付ける（`tools.ts:104` — `export function actionKindFor(scopeTag: string, toolName: string)`）。
 それでも `notes_append` は永久に手動である。**タグはあるが自動承認の資格がない**という、
 §2.4 が想定していなかった状態が存在する。適格性は二つの署名を要求する——
-"Eligibility requires BOTH signals"（`auto-approval.ts:56`）。
+"Eligibility requires BOTH signals"（`auto-approval.ts:58`）。
 
 #### 環境について分かったこと
 
 - **アカウントは移設で来ない。** `.wrangler/state` は git に入らないので、
   別マシンで作ったアカウントは存在しない。**ログインではなく新規作成**が要る。
   `signupsEnabled` は既定 true
-- **管理者名は `admin` に固定。** `run-dev-server.js:246` — `config.vars.ADMINS = ["admin"];`
+- **管理者名は `admin` に固定。** `run-dev-server.js:481` — `config.vars.ADMINS = ["admin"];`
   — がハードコードしており `.dev.vars` では変えられない。
   ただし手順2 の範囲（接続・Gadget 作成・承認）は一般ユーザで足りた
 - **dev サーバはセッションに紐づけて起動すると道連れで落ちる。**
@@ -761,8 +766,8 @@ git config --add remote.origin.fetch '+refs/heads/main:refs/remotes/origin/main'
 つまり**この 1 コミットが 3 件を同時に腐らせた**。しかも誰も気づかない。
 `nwitness -v` は `.nw` しか見ないからである。
 
-引用は上の表のとおり修正した（`api.ts:1334-1337`、`api.ts:1383-1392`、
-`BlueprintLandingPage.tsx:574`）。
+引用は上の表のとおり修正した（`api.ts:1595-1598`、`api.ts:1655-1664`、
+`BlueprintLandingPage.tsx:567`）。
 
 #### ファイル名で索引を引く設計が効いた例
 
@@ -816,9 +821,9 @@ rebase は衝突ゼロ。`main` との差分はリネーム 14 件（0 insertion
 
 | 引用 | 旧 | 新 |
 |---|---|---|
-| `notes.nw` の証言 | `run-dev-server.js:192` | `run-dev-server.js:203` |
-| §2.14 の passthrough | `run-dev-server.js:189-195` | `run-dev-server.js:200-206` |
-| §2.14 の ADMINS | `run-dev-server.js:235` | `run-dev-server.js:246` |
+| `notes.nw` の証言 | `run-dev-server.js:192` | `run-dev-server.js:438` |
+| §2.14 の passthrough | `run-dev-server.js:189-195` | `run-dev-server.js:435-441` |
+| §2.14 の ADMINS | `run-dev-server.js:235` | `run-dev-server.js:481` |
 
 **間引きの前提は無傷。** `findGatekeepers` は依然として
 `gatekeeper-` で始まり `wrangler.jsonc` を持つものだけを拾う（位置は 67 → 78 行）。
@@ -882,7 +887,7 @@ rebase は衝突ゼロ。`main` との差分はリネーム 14 件（0 insertion
 
 > The server declares this tool read-only, so it runs without approval.
 > **That claim comes from the server itself.**
-> （`tools.ts:218`）
+> （`tools.ts:230`）
 
 結果として承認履歴に**同じツールが二つの姿で並ぶ**。
 
@@ -895,9 +900,9 @@ rebase は衝突ゼロ。`main` との差分はリネーム 14 件（0 insertion
 フィルタがあるので、「サーバの言い分で素通りした呼び出し」だけを絞って見られる。
 
 これは見落としではなく**自覚して選ばれたトレードオフ**で、出典にそう書いてある
-（`tools.ts:55-56` — "a tool the server mislabels runs with no approval, where an
+（`tools.ts:60-61` — "a tool the server mislabels runs with no approval, where an
 unlabelled one would have been queued"）。カタログの変化自体も検出されており、
-指紋が変わると `catalog.changed` が記録される（`catalog.ts:66`）。
+指紋が変わると `catalog.changed` が記録される（`catalog.ts:72`）。
 **ただしこれもログ 1 行であって、止めはしない。**
 
 #### なぜこれを調べたか（背景）
@@ -940,7 +945,7 @@ MCP の注釈に署名はない。**名乗りが誰のものかは担保され�
 
 承認前の文言は、**呼び出したときの `needs approval. Poll getActionResult(N)` とは
 別の文字列**である。同じ「待っている」でも、呼んだ側に最初に返す文と、
-問い合わせに答える文は別に書かれている（`session.ts:149` と `session.ts:168`）。
+問い合わせに答える文は別に書かれている（`session.ts:149` と `session.ts:179`）。
 `notes.nw` が別々の証言として挙げていた 2 つが、両方とも実機で出た。
 
 **回収は問い合わせであって実行ではない。** 承認前に回収しても接続先には何も届かない。
@@ -1426,6 +1431,82 @@ gadgets/notes/client.js |  5 +++++          ← tangle が生んだ分
 文書が育つほど高くなるという性質は、§6.3 の「追記を差分の単位にする」構想と
 正面からぶつかる論点である。
 
+### 2.24 26 コミットの追従 — 道具が本領を発揮した（2026-08-16）
+
+**これまでで最大の追従**（26 コミット、339 ファイル、+11,655 −6,088）。
+rebase は**衝突ゼロ**で、`main` との差分はリネーム 14 件と我々の 17 行のまま。
+`api.ts` が +1,910 −1,306 動いていたので覚悟していたが、無事に乗った。
+
+#### 引用は 33 件落ちた。うち 32 件は「動いただけ」
+
+前日に入れた移動検出（`08f9ee4`）が、そのまま本番で働いた。
+
+| 判定 | 件数 |
+|---|---|
+| **移動している**（行番号を直せば済む） | **32** |
+| **どこにもない**（人が読む必要がある） | **1** |
+| 複数箇所にある | 0（`.nw`）/ 4（HANDOFF の範囲引用） |
+
+道具が移動先を言うので、**32 件は機械的に置換できた**。手作業なら一件ずつ
+grep して回るところで、それが二桁になっていた。**元が取れた。**
+
+ずれ幅は上流の変更内容をそのまま映している。`agent.ts` は一律 +74 行、
+`tools.ts` は +6、`auto-approval.ts` は +2、`overseer.ts` は +144〜162。
+`api.ts` は `#182 Enforce JSDoc for API declarations` がコメントを
+`//` から `/** */` に変えたため +260 行前後と大きい。
+
+#### 唯一の「本物」— 上流が文面を変えていた
+
+`session.ts` の保留メッセージが書き換わっていた。
+
+| | |
+|---|---|
+| 旧 | `needs approval. **Poll** getActionResult(N) for the outcome.` |
+| 新 | `needs approval. **If this is running in an agent's executeCode call, return from this executeCode call now so the approval can appear in chat.** After approval, call getActionResult(N)…` |
+
+**「ポーリングせよ」から「いったん抜けろ、承認はチャットに出る」へ変わった。**
+待ち方の設計が変わっている。
+
+`notes.nw` の「人間が承認するまでポーリングする形になる」という散文が
+これで古くなったので、**引用だけでなく散文も直した**。待つ主体が Gadget の画面か
+エージェントかで事情が違う、という書き方に改めてある。
+
+**これが移動と変更を分ける意味である。** 32 件は行番号の付け替えで済むが、
+この 1 件は文書の主張そのものを見直す必要があった。道具が両者を選り分けた。
+
+#### 起動しなくなった — Vite+ のキャッシュ
+
+追従後、`pnpm run-local` が **`Error: spawn EBUSY`** で落ちるようになった。
+`#164` と `#204` がビルドを Vite+（`vp`）に載せ替えた影響である。
+
+切り分けた結果:
+
+| 試したこと | 結果 |
+|---|---|
+| 単体の `vite build -c vite.app.config.ts` | **通る**（6〜19 秒） |
+| `vp run --concurrency-limit 1` | 落ちる（並列は無関係） |
+| 手で先にビルドしてから `vp run --cache` | 落ちる（キャッシュは 0% ヒット） |
+| **`vp run --no-cache`** | **通る**（8.6 秒） |
+
+**Vite+ のタスクキャッシュが有効なとき、esbuild のバイナリを spawn できない。**
+WSL2 固有と思われるが、原因の層までは追っていない。
+
+対処として `run-dev-server.js` の `--cache` を `--no-cache` に変えた
+（フォークにコミット）。キャッシュを失うぶん起動は遅くなるが、
+実測では **34 秒で Ready、暖機後 10〜15ms** と、むしろこれまでで最速だった。
+
+#### 間引きは UI ビルドに効かない
+
+途中で誤診し、二度訂正した。正しくはこうである。
+
+**`vp run -r` は `wrangler.jsonc` の有無を見ない。** タスクを宣言している
+パッケージを全部選ぶので、**我々が無効化した gatekeeper の UI もビルドされる**。
+実際 `EBUSY` で落ちていたのは `gatekeeper-scheduler`——無効化済みのパッケージだった。
+
+§2.6 の間引きは **Worker の起動には効くが、UI のビルドには効かない**。
+起動時間とメモリのうち、後者への効果は限定的になった可能性がある。
+（`#179 Speed up pnpm dev-server startup` がこの構造にした）
+
 ---
 
 ## 3. 未検証・推測にとどまること
@@ -1447,7 +1528,7 @@ gadgets/notes/client.js |  5 +++++          ← tangle が生んだ分
 | ~~Cloudflare AI Gateway の無料枠の範囲~~ | **調べた → §2.19**。あれは運営者が利用者に配る枠で、セルフホストは出す側だった。代わりに Workers AI の 1 日 10,000 neurons が使える |
 | ~~Workers AI のモデルで `.nw` の編集がこなせるか~~ | **一部検証済み → §2.22**。`nemotron-3-120b` で一覧・読解・散文の追記まで到達した。**ただし tangle を要する編集は未検証** |
 | ~~エージェントが tangle を理解しているか~~ | **検証済みに移動 → §2.23**。関係は理解している（正しいチャンクを選んだ）が、走らせる手段がない |
-| 無料枠を超えたときに何が起きるか | 未検証。11,290 / 10,000 でも全リクエストが 200 で通った。課金なのか猶予なのか、Cloudflare のダッシュボードで確認していない |
+| ~~無料枠を超えたときに何が起きるか~~ | **検証済み（2026-08-15）**。しばらく猶予があり、その後 **429** で止まる。11,290 では全部 200、17,193 で 429（トークン 0、課金なし）。タイトル生成用の quick model も同時に弾かれる |
 | `gatekeeper-context` を外すと core が壊れるか | 未検証。壊れる恐れがあるので残している |
 | 間引きを戻して watcher 15 個を立てられるか | 未検証。§2.13 の環境なら乗る計算だが試していない。**メモリの厳しい環境での検証もしたいので、間引きは維持する** |
 | ~~`getActionResult` で結果を回収する往復~~ | **検証済みに移動 → §2.18**。承認前・承認後・却下後の三通りを観察した |
@@ -1645,12 +1726,12 @@ WEB が記述するのは**構造**だけで、**振る舞い**は書けない�
 @証 <種類> <典拠> <記述>
 
 @証 物証 2026-08-07 二つのウィンドウで連動を確認した
-@証 証言 agent.ts:460 calls made while its replacement is being acquired will wait
+@証 証言 agent.ts:534 calls made while its replacement is being acquired will wait
 @証 推理 GadgetUI.tsx:355-365 gadget は親フレームの Proxy で、保留中は待つ
 ```
 
 種類は **物証 / 証言 / 推理** の 3 つ。2 値では足りないことは §2.10 で分かった
-——`agent.ts:460` という**証言は正しかったのに、適用範囲を取り違えて結論が狂った**。
+——`agent.ts:534` という**証言は正しかったのに、適用範囲を取り違えて結論が狂った**。
 証言と物証は違う。
 
 設計上の判断:
@@ -1718,7 +1799,7 @@ WEB が記述するのは**構造**だけで、**振る舞い**は書けない�
 
 | 種類 | 典拠 | 検査すること |
 |---|---|---|
-| `証言` | `agent.ts:398` | **引用文がその行に実在するか** |
+| `証言` | `agent.ts:470` | **引用文がその行に実在するか** |
 | `推理` | `GadgetUI.tsx:355-365` | 本文はこちらの推論なので、**行が実在するか**だけ |
 | `物証` | `2026-08-07` | 日付。突き合わせる相手がない |
 
@@ -1731,7 +1812,7 @@ WEB が記述するのは**構造**だけで、**振る舞い**は書けない�
 `node_modules` / `dist` / `generated` は索引から除く。同名が複数あれば
 曖昧として報告する。`reference/` がないときは `-v` を付けても走らない。
 
-**導入した時点で本物の誤りを 1 件捕まえた。** `agent.ts:452` の証言が
+**導入した時点で本物の誤りを 1 件捕まえた。** `agent.ts:526` の証言が
 逐語引用ではなくこちらの要約になっていた（「公式の例にも … と注記されている」）。
 `証言` と名乗りながら引用でないものを、道具が咎めた。
 
@@ -1798,8 +1879,8 @@ WEB が記述するのは**構造**だけで、**振る舞い**は書けない�
 
 ```
 `mcp.ts:77` — `const TRUST: ServerTrust = "byo";`     ← 破線のあとのコード
-`api.ts:1334-1337` に「Interface to … code sync」     ← 「」の引用
-"Eligibility requires BOTH signals"（`auto-approval.ts:56`）  ← 引用が先、典拠が後
+`api.ts:1595-1598` に「Interface to … code sync」     ← 「」の引用
+"Eligibility requires BOTH signals"（`auto-approval.ts:58`）  ← 引用が先、典拠が後
 ```
 
 **本命の検証**: 今日腐った 3 件を腐る前の値に戻して走らせたところ、
@@ -1809,7 +1890,7 @@ WEB が記述するのは**構造**だけで、**振る舞い**は書けない�
 導入時に文書側の誤りも 2 件見つかった。どちらも
 **「引用」と名乗りながら逐語でなかった**もので、
 `importBlueprint(file.stream())` と `newGadgetFromBlueprint()` は
-実際には引数が違う。2026-08-09 に `agent.ts:452` で捕まえたのと同じ類である。
+実際には引数が違う。2026-08-09 に `agent.ts:526` で捕まえたのと同じ類である。
 **道具を入れるたびに同じ種類の嘘が出てくる。**
 
 道具側の誤検出も 2 件あり、こちらは道具を直した。
