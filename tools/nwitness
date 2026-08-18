@@ -2,6 +2,7 @@
 # nwitness - .nw 文書の証拠を集計する。tangle（綯う）/ weave（織る）に対する第三の操作。
 #   usage: nwitness [-a] [-v] file.nw
 #          nwitness file.md      本文中の `file.ts:123` 形式の引用を突き合わせる
+#          nwitness file.js      生成物の冒頭にある出自を検める
 #          -a  証拠の付いている節も含めて全部出す（既定は未証の節だけ）
 #
 # 平文の既定は「未証」である。`@証` の行が置かれたところだけ裏付けが付く。
@@ -38,16 +39,23 @@ my $REF = 'reference/cloudflare-os';
 # 2026-08-10 に腐ったのはまさにこれで、行番号だけがずれて内容は動いていた。
 exit check_markdown($file) if $file =~ /\.md$/i;
 
+# 生成物は文書ではないので節も証拠も持たない。見るのは冒頭の 2 行だけである。
+# banner は `.nw` のどこにも書かれておらず ntangle が出力時に足すので、
+# チャンクを手で組み立てても合成できない。**無ければ誰かが手で書いている。**
+# 2026-08-18 に実際そうなった（HANDOFF.md §2.30）。
+exit check_generated($file) if $file =~ /\.(?:js|css|html)$/i;
+
 open(my $fh, '<:encoding(UTF-8)', $file) or die "nwitness: $file: $!\n";
 
 my @sections;                      # { title, line, ev => [...] }
+my %roots;                         # チャンク名。うち拡張子つきが生成物になる
 my $cur = { title => '(冒頭)', line => 0, ev => [] };
 my $in_chunk = 0;
 my @misplaced;                     # チャンクの中に置かれた @証（コードに漏れる）
 
 while (my $l = <$fh>) {
     my $n = $.;
-    if ($l =~ /^<<(.+)>>=\s*$/)          { $in_chunk = 1; next; }
+    if ($l =~ /^<<(.+)>>=\s*$/)          { $in_chunk = 1; $roots{$1} = 1; next; }
     if ($in_chunk && $l =~ /^\@\s*$/)    { $in_chunk = 0; next; }
 
     if ($in_chunk) {
@@ -302,6 +310,75 @@ sub anchor_blockquote {        # 引用ブロックの末尾に「> — `file:12
     return length($text) ? $text : undef;
 }
 
+# ---- 生成物の出自 ----
+#
+# banner は文書のどこにも書かれていない。`ntangle` が出力時に足すものである。
+# だからチャンクを手で組み立てても合成できず、**無ければ誰かが手で書いている**。
+# 2026-08-18 に実際そうなった。エージェントは「tangle を回した」と報告したが、
+# 書き戻された `client.js` から banner だけが落ちていた（HANDOFF.md §2.30）。
+#
+# 中身が正しいかは見ない。それは `make` して `git diff` を見れば分かる。
+# ここで見るのは**誰が作ったか**である。
+sub read_banner {
+    my $path = shift;
+    open(my $h, '<:encoding(UTF-8)', $path) or return undef;
+    my $first  = <$h>;
+    my $second = <$h>;
+    close $h;
+    return undef unless defined $first
+                    && $first =~ /Code generated from (\S+) by ntangle\.\s*DO NOT EDIT\./;
+    my $src = $1;
+    my $root = (defined $second && $second =~ /<<(.+?)>>/) ? $1 : undef;
+    return { src => $src, root => $root };
+}
+
+sub defines_root {             # その文書が本当にそのルートを定義しているか
+    my ($nw, $root) = @_;
+    open(my $h, '<:encoding(UTF-8)', $nw) or return 0;
+    while (my $l = <$h>) {
+        if ($l =~ /^<<\Q$root\E>>=\s*$/) { close $h; return 1 }
+    }
+    close $h;
+    return 0;
+}
+
+sub split_path {
+    my $p = shift;
+    return $p =~ m{^(.*)/([^/]+)$} ? ($1, $2) : ('.', $p);
+}
+
+sub check_generated {
+    my $path = shift;
+    my ($dir, $name) = split_path($path);
+
+    print "$path\n\n";
+    my $b = read_banner($path);
+    unless (defined $b) {
+        print "  出自なし  冒頭に ntangle の banner がない\n\n";
+        print "手で書かれたか、banner を出さない ntangle で作られたかである。\n";
+        return 1;
+    }
+
+    my @bad;
+    my $nw = "$dir/$b->{src}";
+    push @bad, "banner の言う $b->{src} が $dir にない" unless -f $nw;
+    if (!defined $b->{root}) {
+        push @bad, "2 行目にルートチャンク名がない";
+    } elsif ($b->{root} ne $name) {
+        push @bad, "ルート名が食い違う: banner は <<$b->{root}>> だがファイル名は $name";
+    }
+    if (-f $nw && defined $b->{root} && !defines_root($nw, $b->{root})) {
+        push @bad, "$b->{src} に <<$b->{root}>> の定義がない";
+    }
+
+    printf "  %-8s %s の <<%s>> から\n",
+           @bad ? "要確認" : "出自", $b->{src}, $b->{root} // '?';
+    print "           $_\n" for @bad;
+    print "\n";
+    printf "生成物 1 件、うち要確認 %d\n", scalar @bad;
+    return @bad ? 1 : 0;
+}
+
 sub build_index {              # ファイル名 -> パス（node_modules と dist は除く）
     my $root = shift;
     my %ix;
@@ -337,6 +414,24 @@ for my $s (@sections) {
     }
 }
 
+# 文書が名乗っているルートのうち、拡張子つきのものが生成物になる。
+# それぞれの隣に置かれたファイルの出自を検める。
+my @outputs = sort grep { /\.(?:js|css|html)$/i } keys %roots;
+my @orphan;
+{
+    my ($dir, $base) = split_path($file);
+    for my $r (@outputs) {
+        my $p = "$dir/$r";
+        if (!-f $p)                { push @orphan, [$r, "まだ生成されていない"]; next }
+        my $b = read_banner($p);
+        if (!defined $b)           { push @orphan, [$r, "出自がない（手で書かれた疑い）"]; next }
+        if ($b->{src} ne $base)    { push @orphan, [$r, "別の文書から生成されている: $b->{src}"]; next }
+        if (($b->{root} // '') ne $r) {
+            push @orphan, [$r, "ルート名が食い違う: <<" . ($b->{root} // '?') . ">>"];
+        }
+    }
+}
+
 print "\n";
 printf "節 %d、うち未証 %d\n", scalar @sections, scalar @unproven;
 printf "証拠 物証 %d / 証言 %d / 推理 %d\n",
@@ -345,6 +440,14 @@ printf "証拠 物証 %d / 証言 %d / 推理 %d\n",
 if ($verify) {
     my $checked = grep { $_->{kind} ne '物証' } map { @{$_->{ev}} } @sections;
     printf "裏取り %d 件、うち要確認 %d\n", $checked, scalar @stale;
+}
+printf "生成物 %d 件、うち要確認 %d\n", scalar @outputs, scalar @orphan if @outputs;
+
+if (@orphan) {
+    print "\n";
+    print "要確認: 生成物の出自。banner は ntangle しか書けないので、\n";
+    print "      無ければ手で書かれている（HANDOFF.md §2.30）。\n";
+    printf "      %s  %s\n", @$_ for @orphan;
 }
 
 if (@stale) {
@@ -364,4 +467,4 @@ if (@misplaced) {
     printf "      %s:%d\n", $file, $_->{line} for @misplaced;
 }
 
-exit 1 if @misplaced || @stale;
+exit 1 if @misplaced || @stale || @orphan;

@@ -31,9 +31,14 @@ weave:
 # VERIFY=1 のときは Markdown の引用も突き合わせる。2026-08-10 に実際に
 # 腐ったのは .nw ではなく HANDOFF.md のほうだったので、守備範囲を揃えた
 # （HANDOFF.md §2.15）。
+# ループは最後のコマンドの終了コードしか返さないので、途中のファイルが落ちても
+# 素通りする。検査に機械で判定できる不変条件（生成物の出自）が入った以上、
+# ここを握り潰したままにはできない。
 witness:
-	@for f in $(NW); do $(WITNESS) $(if $(ALL),-a) $(if $(VERIFY),-v) $$f; done
-	@$(if $(VERIFY),for f in $(MD); do $(WITNESS) $$f; done,:)
+	@rc=0; \
+	for f in $(NW); do $(WITNESS) $(if $(ALL),-a) $(if $(VERIFY),-v) $$f || rc=1; done; \
+	$(if $(VERIFY),for f in $(MD); do $(WITNESS) $$f || rc=1; done;,) \
+	exit $$rc
 
 check:
 	@if ! command -v node >/dev/null 2>&1; then \
