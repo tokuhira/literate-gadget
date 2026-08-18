@@ -1960,6 +1960,12 @@ chat 全体で 10,219 トークン、$0.0458（≒ 4,200 neurons）。
 
 末尾改行が落ちるのは §2.28 と同じで、`executeCode` の返却路が標準出力しかないためである。
 
+返却路はもう一段包まれていた。`console.log(tangled)` が印字したのは MCP の
+封筒そのもの——`{"status":"ok","content":[{"type":"text","text":"// Code generated…"}],"text":"…"}`
+——で、エージェントはこれを解いて `text` を取り出してから書いている。
+推論でも「the tool returns a string? But we got a structured JSON?」と一度戸惑っている。
+**取り出しは正確だった**（だから一致した）が、ここも忠実さを落としうる一段である。
+
 #### banner が判定に使えることの確認
 
 直前の状態はエージェントが手で書いた `client.js`（banner なし）だった。
