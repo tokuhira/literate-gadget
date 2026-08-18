@@ -1,3 +1,6 @@
+// Code generated from notes.nw by ntangle. DO NOT EDIT.
+// これは生成物。変更は notes.nw の <<server.js>> を編集して tangle し直す。
+
 import { DurableObject } from "cloudflare:workers";
 
 function summarize(kind, tool, result) {

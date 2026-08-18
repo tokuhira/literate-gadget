@@ -1,3 +1,6 @@
+// Code generated from counter.nw by ntangle. DO NOT EDIT.
+// これは生成物。変更は counter.nw の <<client.js>> を編集して tangle し直す。
+
 const display = document.createElement("div");
 display.style.cssText = "font-size:5rem;text-align:center;font-family:sans-serif";
 

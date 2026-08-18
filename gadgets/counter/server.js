@@ -1,3 +1,6 @@
+// Code generated from counter.nw by ntangle. DO NOT EDIT.
+// これは生成物。変更は counter.nw の <<server.js>> を編集して tangle し直す。
+
 import { DurableObject } from "cloudflare:workers";
 
 export class Gadget extends DurableObject {

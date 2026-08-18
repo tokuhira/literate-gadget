@@ -1,3 +1,6 @@
+// Code generated from toy.nw by ntangle. DO NOT EDIT.
+// これは生成物。変更は toy.nw の <<client.js>> を編集して tangle し直す。
+
 const out = document.createElement("div");
 out.style.cssText = "font:3rem sans-serif;text-align:center";
 

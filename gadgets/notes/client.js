@@ -1,3 +1,6 @@
+// Code generated from notes.nw by ntangle. DO NOT EDIT.
+// これは生成物。変更は notes.nw の <<client.js>> を編集して tangle し直す。
+
 const style = "font:14px sans-serif";
 document.body.style.cssText = style + ";margin:1rem";
 
