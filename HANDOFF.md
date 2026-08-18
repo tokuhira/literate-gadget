@@ -1800,6 +1800,78 @@ Knuth の tangle も出力に行番号コメントを自動で入れるので、
 
 生成物 6 本が一斉に 3 行増えた。以降の差分には影響しない。
 
+### 2.30 banner は効いた。ただし道具までは届かない（2026-08-18）
+
+§2.29 の対策を入れて、**同じ一文**をもう一度打った。
+
+> ボタンを緑にして
+
+**壁は越えた。** 前回は `client.js` しか読まなかったが、今回は
+`client.js` → `server.js` → **`toy.nw`** の順に読み、`toy.nw` の
+`<<部品を作る>>` を編集した。banner が判断を変えたのは推論に明確に出ている。
+
+> We must edit client.js. **However note that client.js is generated from toy.nw by ntangle.**
+> The comment says "Code generated from toy.nw by ntangle. DO NOT EDIT. …"
+> So we should edit toy.nw instead, then re-tangle?
+> But we don't have a tangle tool? **There's a binding TANGLER: Literate Notes Portal /
+> Literate Tangler. Possibly we can use that to tangle?**
+> But the user likely expects us to directly edit client.js? However the comment warns not to
+> edit because it's generated. … **The instruction says we should edit toy.nw.**
+
+一度は「ユーザは `client.js` を直せというつもりでは」と揺れ、**banner の指示を優先した**。
+そして**こちらが何も言わないのに `TANGLER` の存在に自力で気づいている**。
+
+#### しかし次のターンで見失った
+
+`toy.nw` を編集した直後の推論。
+
+> Now we need to tangle the toy.nw to regenerate client.js and server.js? …
+> However, we don't have a tangle command directly. …
+> We could execute a command? **There's no tool for running ntangle.**
+> Perhaps we need to manually update client.js as well?
+
+**前のターンで見つけた `TANGLER` が消えている。** 発見はターン境界を越えなかった。
+結果として `client.js` を直接編集し、ポータルには最後まで `initialize` すら届かなかった。
+
+出たのは想定 **e ——両方を手で書く**である。
+
+#### 今回は食い違わなかった。ただし理由は構造的
+
+両ファイルに**まったく同じ置換**を当てていた。ワークスペースの `toy.nw` を再現して
+tangle し、エージェントの `client.js` と突き合わせたところ**バイト単位で一致**した。
+
+これは運がよかったのではなく、**変更が 1 チャンク内の 1 行の置換に収まっていて、
+その行が出力へ 1 対 1 で写るから**である。チャンク参照をまたぐ変更、
+インデントの変わる変更、新しいチャンクの追加なら、同じやり方は破綻する。
+**この一致を一般化してはいけない。**
+
+#### 概念は理解していた
+
+最終回答はこう書いている。
+
+- **toy.nw**（生成元）: ボタンのスタイルに `background-color:green;color:white` を追加
+- **client.js**（生成物）: 同様にボタンのスタイルを更新
+
+生成元と生成物を正しく区別しているし、途中では
+「`<<client.js>>` は `<<部品を作る>>` と `<<並べて動かす>>` の両方を含む。
+変えたのは前者の中だけ」と**チャンクの構造まで正確に追えている**。
+分かっていなかったのではなく、**道具に手が届かなかった**。
+
+chat 全体で 9,107 トークン、$0.0340（≒ 3,100 neurons）。
+
+#### 分かったことの切り分け
+
+| | 前回（banner なし） | 今回（banner あり） |
+|---|---|---|
+| `toy.nw` を読む | しない | **する** |
+| 原本として編集する | しない | **する** |
+| `TANGLER` に気づく | しない | **する（ただし 1 ターンだけ）** |
+| `nw_tangle` を呼ぶ | しない | しない |
+
+**「生成物に出自を書く」は、原本へ向かわせるところまでは効く。**
+道具を使わせるところは別の問題として残った。
+なお banner は英語の慣用句と日本語の 2 行から成り、**どちらが効いたかは切り分けていない**（→ §3）。
+
 ---
 
 ## 3. 未検証・推測にとどまること
@@ -1826,7 +1898,9 @@ Knuth の tangle も出力に行番号コメントを自動で入れるので、
 | neuron 換算が正しいか | 未検証。`$0.011/1000` で線形と仮定した推定値であり、Cloudflare の実カウントとは違うかもしれない。ダッシュボードにも neurons は出ないので突き合わせようがない |
 | 枠の窓が固定長かローリング集計か | 未検証。24 時間で戻ることは確かめたが（§2.27）、窓が一括で開くのか消費ごとに個別に期限切れするのかは分けられていない |
 | 文書が長ければ道具を呼ぶか | 未検証。68 行の治具は**手で展開されてしまった**（§2.28）。537 行の `notes.nw` なら諦めて `nw_tangle` を呼ぶかもしれないが、確かめていない |
-| 生成物の冒頭に「原本は `.nw`」と書けば文書を開くか | 未検証。§2.29 で**文書の中に書いても届かない**ことは分かった（開かれないので）。読まれた `client.js` の側に置けば効くかは試していない |
+| banner の英語行と日本語行のどちらが効いたか | 未検証。§2.30 は 2 行まとめて入れた状態の結果。片方ずつ落とせば切り分けられる（1 回 3,000 neurons 程度） |
+| 発見がターン境界を越えないのは何のせいか | 未検証。§2.30 で `TANGLER` を見つけた次のターンに「道具はない」と言った。推論が持ち越されないのか、文脈から落ちたのかは分けられていない |
+| 手で両方を直す形が一般に食い違わないか | **食い違う見込み**。§2.30 が一致したのは 1 チャンク内 1 行の置換だったからで、参照をまたぐ変更やインデントの変わる変更では破綻するはず。試していない |
 | 指示に `.nw` と書けば原本として扱うか | §2.22 で扱ったが、**それはこちらが言及したから**である（§2.29）。文書の側にそう仕向ける力があるかは別問題 |
 | 断片を渡されたときに落ちる仕掛けが働くか | 未検証。§2.26 で `ntangle` 単体では確認したが、**エージェント経由では二度とも発動していない**（呼ばれないか、全文が渡るか） |
 | `gatekeeper-context` を外すと core が壊れるか | 未検証。壊れる恐れがあるので残している |
