@@ -5,6 +5,8 @@ use strict; use warnings;
 
 my $root = '*';
 if (@ARGV >= 2 && $ARGV[0] eq '-r') { shift; $root = shift; }
+my $src = @ARGV ? $ARGV[0] : undef;    # 出自として刻む名前。パスは落とす
+$src =~ s{.*/}{} if defined $src;
 
 # ---- 1. Read the document, collecting chunks. Everything that is not
 #         inside a chunk is prose, and is simply ignored by the tangler.
@@ -40,4 +42,35 @@ sub expand {
     return $out;
 }
 
-print expand($root, '', []);
+# ---- 3. Stamp the output with where it came from. A generated file has to
+#         say so on its own, because whoever opens it may never see the
+#         document (HANDOFF.md §2.29). The comment syntax follows the output's
+#         kind; if we cannot tell, we say nothing rather than guess.
+#
+#         Everything here is deliberately stable: the source name and the root
+#         chunk, and nothing else. A timestamp or a version would change the
+#         output on every run, and these files are tracked in git precisely so
+#         that their diffs can be read (§6.3).
+#
+#         Note there is no `use utf8` and no encoding layer in this tool: the
+#         document's bytes are passed through untouched, so the Japanese below
+#         is emitted as the UTF-8 bytes it already is. Adding an output layer
+#         here would double-encode every non-ASCII string in the chunks.
+my %comment = (
+    js   => ['// ',   ''      ],
+    css  => ['/* ',   ' */'   ],
+    html => ['<!-- ', ' -->'  ],
+    md   => ['<!-- ', ' -->'  ],
+);
+
+sub banner {
+    return '' unless defined $src && $root =~ /\.([A-Za-z0-9]+)$/;
+    my $c = $comment{lc $1} or return '';
+    my ($open, $close) = @$c;
+    return join('', map { "$open$_$close\n" }
+        "Code generated from $src by ntangle. DO NOT EDIT.",
+        "これは生成物。変更は $src の <<$root>> を編集して tangle し直す。",
+    ) . "\n";
+}
+
+print banner(), expand($root, '', []);
