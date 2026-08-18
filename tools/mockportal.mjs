@@ -30,10 +30,6 @@
 
 import { createServer } from "node:http";
 import { execFileSync } from "node:child_process";
-import { writeFileSync, unlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { randomUUID } from "node:crypto";
 
 const PROTOCOL_VERSION = "2025-06-18"; // client.ts の MCP_PROTOCOL_VERSION と一致させる
 
@@ -127,6 +123,12 @@ const TOOLS = [
           type: "string",
           description: "ルートチャンクの名前。例: client.js / server.js",
         },
+        name: {
+          type: "string",
+          description:
+            "文書のファイル名。例: toy.nw。生成物の冒頭に出自として刻まれるので、" +
+            "**実際の文書名を渡すこと**。省くと出自が正しく残らない。",
+        },
       },
       required: ["source", "root"],
     },
@@ -157,33 +159,37 @@ function textResult(text) {
 const NTANGLE = new URL("./ntangle", import.meta.url).pathname;
 const MAX_SOURCE = 1024 * 1024;
 
-function tangle(source, root) {
+function tangle(source, root, name) {
   if (typeof source !== "string" || !source) throw new Error("source が空です。");
   if (source.length > MAX_SOURCE) throw new Error("source が大きすぎます。");
-  // ルート名はコマンドの引数になるので、素性を確かめてから渡す。
+  // ルート名と文書名はコマンドの引数になるので、素性を確かめてから渡す。
   if (typeof root !== "string" || !/^[A-Za-z0-9_.-]+$/.test(root)) {
     throw new Error(`ルート名が不正です: ${root}`);
   }
-  const tmp = join(tmpdir(), `nw-${randomUUID()}.nw`);
+  if (name !== undefined && (typeof name !== "string" || !/^[A-Za-z0-9_.-]+$/.test(name))) {
+    throw new Error(`文書名が不正です: ${name}`);
+  }
+  // **標準入力で渡す。** 以前は一時ファイルに書いていたが、ntangle は読んだ
+  // ファイル名を出自として banner に刻むので、`nw-<uuid>.nw` という嘘が
+  // 生成物の先頭に残ってしまう。標準入力なら刻む名前がないので、
+  // 呼び手が name を名乗ったときだけ -n で正しい名前が入る。
+  // 名乗らなければ banner は出ない——**分からないことは書かない**。
   try {
-    writeFileSync(tmp, source, "utf8");
     // execFileSync なのでシェルを経由しない。引数は配列で渡す。
-    return execFileSync(NTANGLE, ["-r", root, tmp], {
+    const argv = name ? ["-r", root, "-n", name] : ["-r", root];
+    return execFileSync(NTANGLE, argv, {
+      input: source,
       encoding: "utf8", maxBuffer: 8 * 1024 * 1024, timeout: 10_000,
     });
   } catch (err) {
     // ntangle が何を言ったかを渡す。呼ぶのはエージェントなので、
-    // 「Command failed」だけでは直しようがない。一時ファイルのパスは
-    // 呼び手にとって意味がないので落とす。
+    // 「Command failed」だけでは直しようがない。
     //
     // `stdio` は指定していない。execFileSync は既定で err.stderr を埋めるので
     // これで足りる。ただし同じ内容が親の stderr にも流れるため、
     // **ntangle の診断はこのサーバのログにも出る**。実害はないが、
     // ログを見て「エラーが起きている」と早合点しないこと。
-    const said = String(err.stderr ?? "").replace(new RegExp(tmp, "g"), "(入力)").trim();
-    throw new Error(said || err.message);
-  } finally {
-    try { unlinkSync(tmp); } catch { /* 消せなくても実害はない */ }
+    throw new Error(String(err.stderr ?? "").trim() || err.message);
   }
 }
 
@@ -235,7 +241,7 @@ function callTool(name, args) {
     case `${NW_ID}_tangle`: {
       try {
         // 展開結果をそのまま返す。呼んだ側がこれで対応ファイルを上書きする。
-        return textResult(tangle(args?.source, args?.root));
+        return textResult(tangle(args?.source, args?.root, args?.name));
       } catch (err) {
         // ツール自身の失敗は isError で返す。プロトコル層のエラーにはしない
         // （client.ts の「A tool-level failure arrives as isError」に合わせる）。

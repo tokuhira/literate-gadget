@@ -1,11 +1,19 @@
 #!/usr/bin/env perl
 # ntangle - a minimal noweb-style tangler (about 50 lines of real work).
-#   usage: ntangle [-r rootname] file.nw > output
+#   usage: ntangle [-r rootname] [-n name] file.nw > output
+#          -n  banner に刻む文書名（既定は読んだファイル名）
 use strict; use warnings;
 
-my $root = '*';
-if (@ARGV >= 2 && $ARGV[0] eq '-r') { shift; $root = shift; }
-my $src = @ARGV ? $ARGV[0] : undef;    # 出自として刻む名前。パスは落とす
+my ($root, $name) = ('*', undef);
+while (@ARGV >= 2 && $ARGV[0] =~ /^-([rn])$/) {
+    my $o = $1; shift;
+    if ($o eq 'r') { $root = shift } else { $name = shift }
+}
+
+# 出自として刻む名前。既定は読んでいるファイル自身だが、-n で差し替えられる。
+# 標準入力や一時ファイル経由で渡すとき、**本来の文書名を刻むため**に要る。
+# これが無いと MCP ポータル経由の tangle が一時ファイル名を banner に書く。
+my $src = $name // (@ARGV ? $ARGV[0] : undef);
 $src =~ s{.*/}{} if defined $src;
 
 # ---- 1. Read the document, collecting chunks. Everything that is not
