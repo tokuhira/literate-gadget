@@ -370,7 +370,7 @@ Gadget の画面には **App / Code / Connections** のタブがある。
 観察: コードを編集すると、編集していない側のウィンドウは**数字が固まり、
 ボタンも不動になる**。エラーメッセージも出ない。リロードで復旧する。
 
-原因は `agent.ts:534` — `calls made while its replacement is being acquired will wait`
+原因は `agent.ts:532` — `calls made while its replacement is being acquired will wait`
 — つまりプラットフォームがエージェントに与えている説明にある。
 
 > The top-level `gadget` stub survives backend reconnects, and calls made
@@ -433,7 +433,7 @@ Gadget の画面には **App / Code / Connections** のタブがある。
 | 経路 | Workshop の外側の画面 → `subscribeToCode` | サンドボックス iframe → `gadget` スタブ |
 | コード再デプロイの影響 | 受けない | 壊れる |
 
-`api.ts:1595-1598` に「Interface to a workspace's Overseer … code sync
+`api.ts:1598-1600` に「Interface to a workspace's Overseer … code sync
 (one Yjs doc for the whole workspace)」とある。コード doc はワークスペース全体で
 1 つで、`subscribeToCode` は Overseer のメソッド。一方 `gadget` スタブが繋がる先は
 我々が書いた `Gadget` クラスのインスタンスで、**別の Durable Object**。
@@ -476,7 +476,7 @@ pnpm run-local                            # ← 起動するか
 push しておけば、その状態が恒久的に取り出せる。
 
 なぜそれが要るかというと、**証拠の検証は参照元の版に依存する**からである。
-`notes.nw` が 8/10 の時点で `run-dev-server.js:192` を指していたのは正しかったが、
+`notes.nw` が 8/10 の時点で `run-dev-server.js` の 192 行を指していたのは正しかったが、
 いまの reference では 203 である。過去の literate-gadget をチェックアウトしても
 `setup.sh` はフォークの tip を持ってくるので、**当時正しかった証拠が落ちる**。
 タグがあれば、その版を取り出して再現できる。
@@ -589,7 +589,7 @@ push しておけば、その状態が恒久的に取り出せる。
 
 手順2 の原文は「副作用のある操作をエージェントにさせる」だったが、
 承認待ちを作る `submitAction` の呼び出し元は `GatekeeperCaller` 型で、
-`{from: "gadget", gadgetId}` を含む（`overseer.ts:6954-6970` — `from: "gadget";`）。
+`{from: "gadget", gadgetId}` を含む（`overseer.ts:7052-7068` — `from: "gadget";`）。
 **Gadget が binding を叩けば pending が立つ。** §2.7 の「エージェントを迂回する」
 筋がここでも通った。
 
@@ -599,13 +599,13 @@ push しておけば、その状態が恒久的に取り出せる。
 外部アカウントも OAuth も要らない。実害のある副作用は起こさず、メモに文字列を足すだけ。
 
 **`gatekeeper-mcp` ではなく `gatekeeper-mcp-portal` を使った。** 前者は
-`TRUST` を `"byo"` に固定しており（`mcp.ts:77` — `const TRUST: ServerTrust = "byo";`）、byo では `classifyTool` の
+`TRUST` を `"byo"` に固定しており（`mcp.ts:78` — `const TRUST: ServerTrust = "byo";`）、byo では `classifyTool` の
 `autoApprovable` が必ず false になる。つまり URL を貼る方式では
 **自動承認が永久に観察できない**。ポータル側は `MCP_PORTAL_TRUST_ANNOTATIONS=true` で
 `"vetted"` になる。
 
 ローカルの MCP サーバに繋ぐには `MCP_ALLOW_INSECURE=true` が要る。
-`run-dev-server.js:435-441` — `"gatekeeper-mcp": ["MCP_ALLOW_INSECURE"]` — が
+`run-dev-server.ts:432-438` — `"gatekeeper-mcp": ["MCP_ALLOW_INSECURE"]` — が
 これを `.dev.vars` から gatekeeper へ渡す配線を持っており、**ローカル開発を想定した公式の逃げ道**である。
 
 再現手順:
@@ -676,7 +676,7 @@ if (record.description.autoApprovable !== true || rule === undefined) {
 後に積んだ状態で `notes_touch` のルールを有効にしても、**何も起きなかった**。
 `notes_append` を承認した **233 ミリ秒後**に `notes_touch` が誰にも聞かれずに走った。
 承認が関門を外し、堰き止められていた保留が続けて流れた形である
-（`overseer.ts:7760` に "Clearing this manual gate may unblock later auto-eligible
+（`overseer.ts:7863` に "Clearing this manual gate may unblock later auto-eligible
 pending actions" とある）。
 
 **UI の文言はこの場合を想定していない。** ルール作成の確認ダイアログは
@@ -690,7 +690,7 @@ pending actions" とある）。
 #### `actionKind` の第三の状態
 
 §2.4 は「タグを持たない action はどのルールにも一致せず永久に手動」と記録したが、
-MCP は `actionKindFor` が必ず `scopeTag:toolName` のタグを付ける（`tools.ts:104` — `export function actionKindFor(scopeTag: string, toolName: string)`）。
+MCP は `actionKindFor` が必ず `scopeTag:toolName` のタグを付ける（`tools.ts:118` — `export function actionKindFor(scopeTag: string, toolName: string)`）。
 それでも `notes_append` は永久に手動である。**タグはあるが自動承認の資格がない**という、
 §2.4 が想定していなかった状態が存在する。適格性は二つの署名を要求する——
 "Eligibility requires BOTH signals"（`auto-approval.ts:58`）。
@@ -700,7 +700,7 @@ MCP は `actionKindFor` が必ず `scopeTag:toolName` のタグを付ける（`t
 - **アカウントは移設で来ない。** `.wrangler/state` は git に入らないので、
   別マシンで作ったアカウントは存在しない。**ログインではなく新規作成**が要る。
   `signupsEnabled` は既定 true
-- **管理者名は `admin` に固定。** `run-dev-server.js:481` — `config.vars.ADMINS = ["admin"];`
+- **管理者名は `admin` に固定。** `run-dev-server.ts:478` — `config.vars.ADMINS = ["admin"];`
   — がハードコードしており `.dev.vars` では変えられない。
   ただし手順2 の範囲（接続・Gadget 作成・承認）は一般ユーザで足りた
 - **dev サーバはセッションに紐づけて起動すると道連れで落ちる。**
@@ -821,9 +821,9 @@ rebase は衝突ゼロ。`main` との差分はリネーム 14 件（0 insertion
 
 | 引用 | 旧 | 新 |
 |---|---|---|
-| `notes.nw` の証言 | `run-dev-server.js:192` | `run-dev-server.js:438` |
-| §2.14 の passthrough | `run-dev-server.js:189-195` | `run-dev-server.js:435-441` |
-| §2.14 の ADMINS | `run-dev-server.js:235` | `run-dev-server.js:481` |
+| `notes.nw` の証言 | `run-dev-server.js` の 192 行 | `run-dev-server.js` の 438 行 |
+| §2.14 の passthrough | `run-dev-server.js` の 189-195 行 | `run-dev-server.js` の 435-441 行 |
+| §2.14 の ADMINS | `run-dev-server.js` の 235 行 | `run-dev-server.js` の 481 行 |
 
 **間引きの前提は無傷。** `findGatekeepers` は依然として
 `gatekeeper-` で始まり `wrangler.jsonc` を持つものだけを拾う（位置は 67 → 78 行）。
@@ -865,7 +865,7 @@ rebase は衝突ゼロ。`main` との差分はリネーム 14 件（0 insertion
 **取り直しと呼び出しが同じ往復の中で起きる。** TTL が切れた状態で押すと、
 その呼び出し自身がカタログを取り直し、**新しい分類がその場でその呼び出しに適用される**。
 二度押す必要はなかった。分類は grant 時固定でも呼び出しごとでもなく、
-**5 分の TTL つきキャッシュ**である（`catalog.ts:17` — `export const CATALOG_TTL_MS = 5 * 60 * 1000;`）。
+**5 分の TTL つきキャッシュ**である（`catalog.ts:23` — `export const CATALOG_TTL_MS = 5 * 60 * 1000;`）。
 
 嘘をつかせた直後に押した分は、**古い分類のまま承認を要求された**。
 「効かない時間がある」ことも観察できている。
@@ -900,7 +900,7 @@ rebase は衝突ゼロ。`main` との差分はリネーム 14 件（0 insertion
 フィルタがあるので、「サーバの言い分で素通りした呼び出し」だけを絞って見られる。
 
 これは見落としではなく**自覚して選ばれたトレードオフ**で、出典にそう書いてある
-（`tools.ts:60-61` — "a tool the server mislabels runs with no approval, where an
+（`tools.ts:65-66` — "a tool the server mislabels runs with no approval, where an
 unlabelled one would have been queued"）。カタログの変化自体も検出されており、
 指紋が変わると `catalog.changed` が記録される（`catalog.ts:72`）。
 **ただしこれもログ 1 行であって、止めはしない。**
@@ -1652,14 +1652,14 @@ curl -s -w 'HTTP %{http_code}\n' \
 > enumerate them programmatically (this will not work, **as they are RPC interfaces**).
 > Use the describeBinding tool to learn what interface they provide before writing any code.
 >
-> — `agent.ts:675`
+> — `agent.ts:728`
 
 資源が接続されたときの案内も同じである。
 
 > the resource becomes available as `env.<bindingName>`, which you can describeBinding
 > and **use from executeCode**
 >
-> — `agent.ts:707`
+> — `agent.ts:760`
 
 つまり **MCP ツールを「ツールとして」エージェントに見せる道はそもそも用意されていない。**
 `readOnlyHint` による観測／行動の分類は効くが（後述）、それは
@@ -1991,6 +1991,76 @@ banner を入れたことで、ポータル経由の tangle に**新しい穴**�
 **道具を足すと、その道具が新しい嘘の経路になりうる。** banner は出自を保証する
 仕掛けだったが、経路を一つ間違えれば出自を騙る仕掛けにもなっていた。
 
+### 2.31 四度目の追従 — 改名と、歴史をどう扱うか（2026-08-21）
+
+出張で三日空いたあいだの上流 26 コミット（247 ファイル、+14,433 −1,661）。
+件数が §2.24 と同じなのは偶然で、中身は別物である。
+
+rebase は 4 件中 3 件が素通り。衝突したのは 1 件で、**上流が
+`run-dev-server.js` を `scripts/run-dev-server.ts` へ移して TypeScript 化した**
+（#233）ためである。同時に #235 が `pnpmCommand()` ヘルパを入れていたので、
+上流の構造に乗せ替えつつ `--cache` → `--no-cache` だけを当て直した。
+起動は確認済み——`Ready on http://localhost:8787`、`⊘ cache disabled` も出ている。
+
+#### 引用は 48 件落ちた。うち 35 件は機械で直った
+
+| 判定 | 件数 | 扱い |
+|---|---|---|
+| 移動している | **35** | 道具の言う先へ一括置換 |
+| ファイルが無い | 9 | **新しい壊れ方**（下記） |
+| 複数箇所にある | 2 | 人が選んだ |
+| 消えた | 0 | — |
+
+#### 新しい壊れ方 — 改名
+
+これまでの風化は「行が動く」だけだった。今回は**ファイルの名前そのものが変わった**。
+`nwitness` は基底名で索引を引くので、`run-dev-server.js` は単に
+「参照元に見つからない」になる。**消えたのか名前が変わったのかを言えない。**
+
+行の移動を追えるのと同じ理屈で追えるはずなので、道具に足した（`describe_missing`）。
+**拡張子違いの同名**を候補として集め、引用がそこにあるかまで見る。
+
+```
+ファイル名が変わっている: scripts/run-dev-server.ts:437（引用はそこにある）
+```
+
+アンカーのない引用は文言を照合できないので、候補を挙げるにとどめる。
+**分かることだけ言う**のは banner の設計（§2.30）と同じ姿勢である。
+
+#### もっと厄介だったこと — 歴史は直してはいけない
+
+改名で落ちた 9 件のうち、**直してよかったのは 3 件だけ**だった。
+
+残る 6 件は §2.15 の「旧 → 新」表と、「8/10 の時点で `run-dev-server.js` の
+192 行を指していた」という散文である。**これらは過去の状態の記録**であって、
+いま上流がどうなっているかの主張ではない。**書き換えれば記録の偽造になる。**
+
+`nwitness` にこの区別はつかない。バッククォートで囲まれた `file:line` を
+一律に「主張」として拾うからである。**道具は文脈を読まない。**
+
+道具側で解くのは筋が悪いと判断した。「これは歴史だ」と機械に教える記法を
+足せば、その記法を付け忘れた箇所が新しい無防備になるだけである。
+代わりに**文書の側の書き方を変えた**。
+
+| | |
+|---|---|
+| 主張 | `` `run-dev-server.ts:478` `` — 検査される |
+| 歴史 | `` `run-dev-server.js` の 481 行 `` — 検査されない |
+
+引用として書けば検査され、散文として書けば検査されない。
+**検査されたいかどうかを書き手が字面で選ぶ**という点で、
+`@証` を置くか置かないかと同じ設計になっている（平文の既定は未証）。
+
+結果、HANDOFF の引用は 47 → 39 件に減った。**8 件は主張ではなかった**ということである。
+
+#### MCP まわりは無事だった
+
+上流は MCP に手を入れている（#169 progressive discovery、#170 large catalogs、
+#269 discovery flows の整理、計 +2,374 −479）。実験の土台なので確かめたが、
+**ポータルの語彙は変わっていない**——`portal_list_servers` と `{server_id}_{tool}`。
+大きなカタログ向けに `tool-search.ts` が新設されたが、我々の 5 ツールは従来の経路に乗る。
+`portal_list_servers` の応答形式（`- {表示名} ({id}): {状態}`）も一致を確認した。
+
 ---
 
 ## 3. 未検証・推測にとどまること
@@ -2252,6 +2322,12 @@ WEB が記述するのは**構造**だけで、**振る舞い**は書けない�
    バイト単位で同一だった（§2.28）。虚偽申告を見破れたのはポータルのログという
    **外部の観測点**があったからである。**`ntangle` が banner を出すようにしてから、
    成果物だけで見分けられるようになった**（§2.30）
+
+6. **主張と歴史を見分けられない。** 引用の形をしていれば一律に「いま上流が
+   こうなっている」という主張として検査する。だが文書には**過去の状態の記録**も
+   書かれる（§2.15 の「旧 → 新」表など）。2026-08-21 に 6 件がこれで落ちた。
+   **直せば記録の偽造になる。** 道具側で解くのは筋が悪いので、
+   引用として書くか散文として書くかを**書き手が字面で選ぶ**ことにした（§2.31）
 
 1 と 2 は実際に使って困ってから直すほうがよい。
 4 は実害が出たので**その日のうちに直した**（下記）。
@@ -2664,7 +2740,7 @@ Gadget のサンドボックスで機能するかは未検証（§3）。
 
 **証拠は参照元の版に依存するのに、その版が記録されていない。**
 過去の literate-gadget をチェックアウトしても、`setup.sh` はフォークの
-**tip** を持ってくる。8/10 の `notes.nw` は `run-dev-server.js:192` を
+**tip** を持ってくる。8/10 の `notes.nw` は `run-dev-server.js` の 192 行を
 指していて当時は正しかったが、いまの reference では 203 である。
 **「風化していなかった時点」を再現できない。**
 

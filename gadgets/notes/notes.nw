@@ -21,7 +21,7 @@ Gadget が外の世界に触れると何が起きるかを見るための Gadget
 呼び出し元を選ばず、Gadget からの呼び出しもそこに含まれる。
 `§2.7` で使った「エージェントを迂回する」筋がここでも通る。
 
-@証 証言 overseer.ts:6958 from: "gadget";
+@証 証言 overseer.ts:7056 from: "gadget";
 @証 推理 overseer.ts:6954-6970 呼び出し元は agent / gadget / user / hook の四つで、gadget はそのうちの一つ
 
 ## 三つの道具と、その期待される扱い
@@ -45,10 +45,10 @@ MCP のツールが「読み取り」か「承認の要る操作」かは、
 自動承認が永久に成立しないためである。
 
 @証 物証 2026-08-10 grant の画面で read-only / needs approval のバッジが上の表のとおりに付いた
-@証 証言 tools.ts:79 mode: readOnly ? "read" : "action",
-@証 証言 tools.ts:72-75 const autoApprovable = !readOnly && trust === "vetted" && annotations.destructiveHint === false && annotations.idempotentHint === true;
-@証 証言 mcp.ts:77 const TRUST: ServerTrust = "byo";
-@証 証言 run-dev-server.js:438 "MCP_PORTAL_TRUST_ANNOTATIONS", "MCP_ALLOW_INSECURE",
+@証 証言 tools.ts:84 mode: readOnly ? "read" : "action",
+@証 証言 tools.ts:77-80 const autoApprovable = !readOnly && trust === "vetted" && annotations.destructiveHint === false && annotations.idempotentHint === true;
+@証 証言 mcp.ts:78 const TRUST: ServerTrust = "byo";
+@証 証言 run-dev-server.ts:435 "MCP_PORTAL_TRUST_ANNOTATIONS", "MCP_ALLOW_INSECURE",
 
 ---
 
@@ -61,7 +61,7 @@ MCP のツールが「読み取り」か「承認の要る操作」かは、
 それが `this.env` に生えている。
 
 @証 証言 agent.ts:470 The class must be exported under the name `Gadget`
-@証 証言 agent.ts:495 a Gadget communicates with the outside world strictly through its "bindings"
+@証 証言 agent.ts:493 a Gadget communicates with the outside world strictly through its "bindings"
 
 <<server.js>>=
 import { DurableObject } from "cloudflare:workers";
@@ -87,7 +87,7 @@ export class Gadget extends DurableObject {
 `counter.nw` と同じ理由で、接続中のブラウザから預かったコールバックは
 メモリの集合に置く。接続が切れれば意味を失う情報だからである。
 
-@証 証言 agent.ts:542 Memory is OK to use for caching
+@証 証言 agent.ts:540 Memory is OK to use for caching
 
 <<購読者の集合を用意する>>=
 constructor(ctx, env) {
@@ -127,7 +127,7 @@ get notes() {
 
 古いものから捨てて 20 件だけ持つ。観察用なので全部は要らない。
 
-@証 証言 agent.ts:542 ALWAYS store server state in Durable Object storage, not just in memory
+@証 証言 agent.ts:540 ALWAYS store server state in Durable Object storage, not just in memory
 
 <<記録を読む>>=
 
@@ -158,7 +158,7 @@ async note(entry) {
 `actionId` も持っているからである。画面はこの二つを違う扱いにしたいので、
 **推測できない情報は記録する側が書いておく**。
 
-@証 証言 session.ts:159 needs approval. If this is running in an
+@証 証言 session.ts:235 needs approval. If this is running in an
 
 <<結果を一行にまとめる>>=
 function summarize(kind, tool, result) {
@@ -180,7 +180,7 @@ function summarize(kind, tool, result) {
 記録は残る。ただし記録されるのは観測であって、承認の対象にはならない。
 
 @証 物証 2026-08-10 押すと ok が即座に返り、モックサーバに tools/call notes_read が届いた。承認は求められなかった
-@証 証言 tools.ts:79 mode: readOnly ? "read" : "action",
+@証 証言 tools.ts:84 mode: readOnly ? "read" : "action",
 
 <<メモを読む>>=
 
@@ -205,7 +205,7 @@ async readNote() {
 止められ、保留として積まれるだけである。
 
 @証 物証 2026-08-10 押すと pending と番号が返り、モックサーバ側の着信は一件も増えなかった
-@証 証言 tools.ts:72-75 const autoApprovable = !readOnly && trust === "vetted" && annotations.destructiveHint === false && annotations.idempotentHint === true;
+@証 証言 tools.ts:77-80 const autoApprovable = !readOnly && trust === "vetted" && annotations.destructiveHint === false && annotations.idempotentHint === true;
 
 <<メモに書き足す>>=
 
@@ -263,7 +263,7 @@ async touchNote() {
 @証 物証 2026-08-10 append を先に積んだ状態で touch の自動承認を有効にしても適用されず、append を承認した 233 ミリ秒後に touch がサーバへ届いた
 @証 証言 auto-approval.ts:73 A manual gate. Stop rather than skipping ahead to any later auto-eligible action.
 @証 証言 auto-approval.ts:56 nothing is silently applied past a human gate.
-@証 証言 overseer.ts:7760 Clearing this manual gate may unblock later auto-eligible pending actions on the same
+@証 証言 overseer.ts:7863 Clearing this manual gate may unblock later auto-eligible pending actions on the same
 
 ## 自己申告を信じるということ
 
@@ -296,10 +296,10 @@ async touchNote() {
 
 @証 物証 2026-08-11 readOnlyHint:true を名乗らせた notes_append が承認を経ずに走り、メモが書き換わった。三つの記録（画面・接続先の着信・承認履歴）が一致した
 @証 物証 2026-08-11 名乗りを変えてから 5 分 50 秒は古い分類のままで、期限切れ後の最初の呼び出しが取り直しと同時に新分類で走った
-@証 証言 tools.ts:60-61 a tool the server mislabels runs with no approval, where an unlabelled one would have been queued
-@証 証言 tools.ts:230 The server declares this tool read-only, so it runs without approval. That claim comes
-@証 証言 catalog.ts:17 export const CATALOG_TTL_MS = 5 * 60 * 1000;
-@証 証言 catalog.ts:72 server tool catalog changed
+@証 証言 tools.ts:65-66 a tool the server mislabels runs with no approval, where an unlabelled one would have been queued
+@証 証言 tools.ts:244 The server declares this tool read-only, so it runs without approval. That claim comes
+@証 証言 catalog.ts:23 export const CATALOG_TTL_MS = 5 * 60 * 1000;
+@証 証言 catalog.ts:97 server tool catalog changed
 
 ## 回収
 
@@ -336,8 +336,8 @@ Gadget が見ていないあいだに走ったので、**渡された時点で�
 
 @証 物証 2026-08-11 承認前に回収すると pending と is awaiting approval が返り、接続先の着信は増えなかった
 @証 物証 2026-08-11 承認後に回収すると ok とサーバの応答が返り、承認履歴に result of notes_append という観測が新たに現れた
-@証 証言 session.ts:179 is awaiting approval.
-@証 証言 session.ts:195 it becomes an observation at
+@証 証言 session.ts:255 is awaiting approval.
+@証 証言 session.ts:271 it becomes an observation at
 
 <<保留中の結果を回収する>>=
 
@@ -353,7 +353,7 @@ async collect(actionId) {
 `counter.nw` と同じ形である。渡ってきたスタブは `.dup()` で長命にし、
 切断は `onRpcBroken` で拾って集合から外す。配信の失敗は握り潰す。
 
-@証 証言 agent.ts:505 it is important to call .dup() on the callback stub, in order to obtain a long-lived stub
+@証 証言 agent.ts:503 it is important to call .dup() on the callback stub, in order to obtain a long-lived stub
 
 <<更新の購読を受け付ける>>=
 
@@ -398,7 +398,7 @@ broadcast(log) {
 **入力欄が要るのはサンドボックスの制約でもある。** iframe の中では
 `prompt()` の類が使えないので、文字列を受け取る場所を自分で作るしかない。
 
-@証 証言 agent.ts:497 the iframe sandbox on the client side prohibits modal popup boxes like alert() and confirm()
+@証 証言 agent.ts:495 the iframe sandbox on the client side prohibits modal popup boxes like alert() and confirm()
 
 <<画面を組み立てる>>=
 const style = "font:14px sans-serif";
@@ -490,7 +490,7 @@ function render(log) {
 
 `counter.nw` と同じ形である。再接続を自前で作らない理由もあちらに書いた。
 
-@証 証言 agent.ts:534 calls made while its replacement is being acquired will wait
+@証 証言 agent.ts:532 calls made while its replacement is being acquired will wait
 
 <<サーバからの更新を受け取る>>=
 

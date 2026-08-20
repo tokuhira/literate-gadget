@@ -100,7 +100,7 @@ if ($verify) {
 
             my $paths = $index{$name};
             if (!$paths) {
-                push @stale, [$e, "参照元に $name が見つからない"]; next;
+                push @stale, [$e, describe_missing($name, norm($e->{text}), \%index)]; next;
             }
             if (@$paths > 1) {
                 push @stale, [$e, "$name が複数ある: " . join(', ', @$paths)]; next;
@@ -228,7 +228,7 @@ sub check_markdown {
                       // anchor_blockquote(\@src, $i);
 
             my $paths = $index{$name};
-            if    (!$paths)      { push @bad, [$where, "参照元に $name が見つからない"]; next }
+            if    (!$paths)      { push @bad, [$where, describe_missing($name, $anchor, \%index)]; next }
             elsif (@$paths > 1)  { push @bad, [$where, "$name が複数ある: " . join(', ', @$paths)]; next }
 
             my @lines = read_lines($paths->[0]);
@@ -377,6 +377,36 @@ sub check_generated {
     print "\n";
     printf "生成物 1 件、うち要確認 %d\n", scalar @bad;
     return @bad ? 1 : 0;
+}
+
+# 典拠のファイルが見つからないとき、消えたのか**名前が変わったのか**を分ける。
+#
+# 2026-08-21 に上流が `run-dev-server.js` を `scripts/run-dev-server.ts` へ移した
+# （TypeScript 化）。9 件の引用が一斉に「見つからない」になったが、中身は
+# 生きている。行が動いたときに移動先を言うのと同じ理屈で、**拡張子違いの同名**を
+# 探して、そこに引用があるかまで見る（HANDOFF.md §2.31）。
+sub stem_of { my $n = shift; $n =~ s/\.[^.]+$//; return $n }
+
+sub describe_missing {
+    my ($name, $needle, $index) = @_;
+    my $stem = stem_of($name);
+    my @cand = grep { $_ ne $name && stem_of($_) eq $stem } keys %$index;
+    return "参照元に $name が見つからない" unless @cand;
+
+    my @paths = map { @{$index->{$_}} } @cand;
+    if (defined $needle && length $needle) {
+        my @hit;
+        for my $p (@paths) {
+            my @lines = read_lines($p);
+            for my $i (0 .. $#lines) {
+                push @hit, "$p:" . ($i + 1) if index(hay_of($lines[$i]), $needle) >= 0;
+            }
+        }
+        return "ファイル名が変わっている: " . join(', ', @hit) . "（引用はそこにある）" if @hit;
+        return "$name は無い。似た名前はある（" . join(', ', @paths) .
+               "）が引用は見当たらない";
+    }
+    return "$name は無い。名前が変わった可能性: " . join(', ', @paths);
 }
 
 sub build_index {              # ファイル名 -> パス（node_modules と dist は除く）
