@@ -44,7 +44,11 @@ sub expand {
         if ($line =~ /^(\s*)<<(.+)>>\s*$/) {
             $out .= expand($2, $indent . $1, [@$stack, $name]);
         } else {
-            $out .= $indent . $line;
+            # Empty lines get no indent. Prefixing one would emit trailing
+            # whitespace, and any editor that strips it would make the generated
+            # file differ from what tangling produces -- permanently, and for a
+            # reason nobody would think to look for (HANDOFF.md §2.33).
+            $out .= ($line =~ /^[ \t]*$/) ? $line : $indent . $line;
         }
     }
     return $out;
