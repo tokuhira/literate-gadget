@@ -18,7 +18,7 @@ export class Gadget extends DurableObject {
     super(ctx, env);
     this.subscribers = new Set();
   }
-  
+
   get notes() {
     const binding = this.env.NOTES;
     if (!binding) {
@@ -27,11 +27,11 @@ export class Gadget extends DurableObject {
     }
     return binding;
   }
-  
+
   async getLog() {
     return (await this.ctx.storage.get("log")) ?? [];
   }
-  
+
   async note(entry) {
     const log = [...(await this.getLog()), { at: new Date().toISOString(), ...entry }];
     const trimmed = log.slice(-20);
@@ -39,36 +39,36 @@ export class Gadget extends DurableObject {
     this.broadcast(trimmed);
     return trimmed;
   }
-  
+
   async readNote() {
     return this.note(
       summarize("call", "notes_read", await this.notes.callTool("notes_read", {})));
   }
-  
+
   async appendNote(text) {
     return this.note(
       summarize("call", "notes_append",
                 await this.notes.callTool("notes_append", { text })));
   }
-  
+
   async touchNote() {
     return this.note(
       summarize("call", "notes_touch", await this.notes.callTool("notes_touch", {})));
   }
-  
+
   async collect(actionId) {
     return this.note(
       summarize("collect", "回収 #" + actionId,
                 await this.notes.getActionResult(actionId)));
   }
-  
+
   async subscribe(callback) {
     const held = callback.dup();
     this.subscribers.add(held);
     held.onRpcBroken(() => this.subscribers.delete(held));
     return this.getLog();
   }
-  
+
   broadcast(log) {
     for (const s of this.subscribers) {
       s.update(log).catch(() => {});
