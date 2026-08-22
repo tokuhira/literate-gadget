@@ -30,7 +30,8 @@ Cloudflare OS の Gadget を、文芸的プログラミング（literate program
 ## 構成
 
 ```
-tools/            ntangle（tangler）, nweave（weaver）。Perl 製、依存なし
+tools/            ntangle / nweave / nwitness は Perl 製、依存なし
+                  mkgadget / ckgadget / mockportal / wsdump は Node 製
 gadgets/counter/  counter.nw が原本。server.js / client.js は生成物
 docs/             入門文書と、CWEB / WEB の動く例
 reference/        cloudflare-os フォークの literate-gadget-minimal（.gitignore 済み）
@@ -40,13 +41,18 @@ reference/        cloudflare-os フォークの literate-gadget-minimal（.gitig
 
 必須は **perl / make / git** の 3 つだけ。tangle も weave も Perl 製で依存はない。
 
-**Node.js は任意**。要るのは次の 2 つの場面のみ。
+**Node.js は任意**。要るのは次の場面のみ。
 
 - `make check`（生成した JS の構文検査）
 - `HANDOFF.md` 手順1 の `pnpm run-local`（cloudflare-os は pnpm 11.17 を指定）
+- `tools/wsdump`（走っているワークスペースから Gadget のファイルを取り出す）。
+  **sqlite3 も要る**。上流 #275 で保存が git になったので、中身は
+  `git` に読ませる（`HANDOFF.md` §2.34）
 
 Claude Code はネイティブバイナリで実行時に Node を使わないため、
 Claude Code が動いていても node が PATH にあるとは限らない。混同しないこと。
+**nvm 環境では `node` も `pnpm` も PATH に無いことがある**
+（`~/.nvm/versions/node/*/bin` を通す）。
 
 **`pnpm run-local` はメモリを食う。** 素の cloudflare-os では gatekeeper ごとに
 常駐 watcher が 15 個立ち、メモリの小さい環境では OOM で落ちる
