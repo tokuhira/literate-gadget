@@ -17,8 +17,8 @@ Gadget は必ず二つのファイルからなる。`server.js` はサーバ側�
 
 クラス名は必ず `Gadget` でなければならない。
 
-@証 証言 agent.ts:470 The class must be exported under the name `Gadget`
-@証 証言 agent.ts:470 there is no need to export a separate fetch handler; the Gadgets platform automatically takes care of routing
+@証 証言 agent.ts:551 The class must be exported under the name `Gadget`
+@証 証言 agent.ts:551 there is no need to export a separate fetch handler; the Gadgets platform automatically takes care of routing
 @証 物証 2026-08-07 この形のまま実機で動いた
 
 <<server.js>>=
@@ -39,8 +39,8 @@ export class Gadget extends DurableObject {
 接続中のブラウザから預かったコールバックを保持しておく。
 これはメモリ上の集合でよい。接続が切れれば意味を失う情報だからである。
 
-@証 証言 agent.ts:540 Memory is OK to use for caching
-@証 証言 agent.ts:532 other capabilities passed over RPC in either direction are disposed on disconnect
+@証 証言 agent.ts:621 Memory is OK to use for caching
+@証 証言 agent.ts:613 other capabilities passed over RPC in either direction are disposed on disconnect
 
 <<購読者の集合を用意する>>=
 constructor(ctx, env) {
@@ -58,7 +58,7 @@ constructor(ctx, env) {
 まだ一度も押されていなければ値は存在しないので、そのときは 0 とみなす。
 
 @証 物証 2026-08-07 コードを書き換えて再デプロイさせたあとも、リロードすれば数値は保たれていた
-@証 証言 agent.ts:540 ALWAYS store server state in Durable Object storage, not just in memory
+@証 証言 agent.ts:621 ALWAYS store server state in Durable Object storage, not just in memory
 
 <<現在値を読む>>=
 
@@ -95,7 +95,7 @@ async increment(delta) {
 そこで集合から取り除く。
 
 @証 物証 2026-08-07 二つのウィンドウで同時に開き、片方のボタンが即座にもう片方へ反映された
-@証 証言 agent.ts:503 it is important to call .dup() on the callback stub, in order to obtain a long-lived stub
+@証 証言 agent.ts:584 it is important to call .dup() on the callback stub, in order to obtain a long-lived stub
 
 <<更新の購読を受け付ける>>=
 
@@ -145,8 +145,8 @@ HTML ファイルは存在せず、**画面は全部 JavaScript から DOM を�
 グローバル変数 `gadget` が最初から用意されていて、これがサーバへの RPC スタブになる。
 `gadget.increment(1)` と書けば、サーバ側の `increment` が呼ばれる。
 
-@証 証言 agent.ts:482 The client context is initialized with a special global variable called `gadget`
-@証 証言 agent.ts:489 there is no index.html. Instead, client.js must build the entire UI using JavaScript code
+@証 証言 agent.ts:563 The client context is initialized with a special global variable called `gadget`
+@証 証言 agent.ts:570 there is no index.html. Instead, client.js must build the entire UI using JavaScript code
 @証 推理 GadgetUI.tsx:355-365 その `gadget` の実体は親フレーム側の Proxy で、iframe とは MessagePort で繋がっている
 
 <<client.js>>=
@@ -192,8 +192,8 @@ document.body.append(display, controls);
 ここでは `new Watcher()` を作り直している。破棄されたオブジェクトを
 再び渡すより素直だと考えたためで、**どちらが正しいかは確かめていない。**
 
-@証 証言 agent.ts:532 other capabilities passed over RPC in either direction are disposed on disconnect, and must be re-acquired
-@証 証言 agent.ts:524 Connection lost. Resubscribe using new connection.
+@証 証言 agent.ts:613 other capabilities passed over RPC in either direction are disposed on disconnect, and must be re-acquired
+@証 証言 agent.ts:605 Connection lost. Resubscribe using new connection.
 
 <<サーバからの更新を受け取る>>=
 
@@ -235,7 +235,7 @@ async function connect() {
 @
 
 @証 物証 2026-08-07 リトライ版を実機で試したところ、数字もボタンも固まりエラーも出なかった
-@証 証言 agent.ts:532 calls made while its replacement is being acquired will wait
+@証 証言 agent.ts:613 calls made while its replacement is being acquired will wait
 @証 推理 GadgetUI.tsx:355-365 iframe から見える gadget は親フレームの Proxy で、保留中は pending.promise を待つ
 @証 推理 GadgetUI.tsx:218-238 プラットフォーム側は Promise.race で 5 秒待ち、超えたら iframe を再読み込みする
 

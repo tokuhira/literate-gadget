@@ -21,7 +21,7 @@ Gadget が外の世界に触れると何が起きるかを見るための Gadget
 呼び出し元を選ばず、Gadget からの呼び出しもそこに含まれる。
 `§2.7` で使った「エージェントを迂回する」筋がここでも通る。
 
-@証 証言 overseer.ts:7056 from: "gadget";
+@証 証言 overseer.ts:8642 from: "gadget";
 @証 推理 overseer.ts:6954-6970 呼び出し元は agent / gadget / user / hook の四つで、gadget はそのうちの一つ
 
 ## 三つの道具と、その期待される扱い
@@ -48,7 +48,7 @@ MCP のツールが「読み取り」か「承認の要る操作」かは、
 @証 証言 tools.ts:84 mode: readOnly ? "read" : "action",
 @証 証言 tools.ts:77-80 const autoApprovable = !readOnly && trust === "vetted" && annotations.destructiveHint === false && annotations.idempotentHint === true;
 @証 証言 mcp.ts:78 const TRUST: ServerTrust = "byo";
-@証 証言 run-dev-server.ts:435 "MCP_PORTAL_TRUST_ANNOTATIONS", "MCP_ALLOW_INSECURE",
+@証 証言 run-dev-server.ts:437 "MCP_PORTAL_TRUST_ANNOTATIONS", "MCP_ALLOW_INSECURE",
 
 ---
 
@@ -60,8 +60,8 @@ MCP のツールが「読み取り」か「承認の要る操作」かは、
 `fetch()` でインターネットに出られない。外の世界に触れる道は binding だけで、
 それが `this.env` に生えている。
 
-@証 証言 agent.ts:470 The class must be exported under the name `Gadget`
-@証 証言 agent.ts:493 a Gadget communicates with the outside world strictly through its "bindings"
+@証 証言 agent.ts:551 The class must be exported under the name `Gadget`
+@証 証言 agent.ts:574 a Gadget communicates with the outside world strictly through its "bindings"
 
 <<server.js>>=
 import { DurableObject } from "cloudflare:workers";
@@ -87,7 +87,7 @@ export class Gadget extends DurableObject {
 `counter.nw` と同じ理由で、接続中のブラウザから預かったコールバックは
 メモリの集合に置く。接続が切れれば意味を失う情報だからである。
 
-@証 証言 agent.ts:540 Memory is OK to use for caching
+@証 証言 agent.ts:621 Memory is OK to use for caching
 
 <<購読者の集合を用意する>>=
 constructor(ctx, env) {
@@ -127,7 +127,7 @@ get notes() {
 
 古いものから捨てて 20 件だけ持つ。観察用なので全部は要らない。
 
-@証 証言 agent.ts:540 ALWAYS store server state in Durable Object storage, not just in memory
+@証 証言 agent.ts:621 ALWAYS store server state in Durable Object storage, not just in memory
 
 <<記録を読む>>=
 
@@ -263,7 +263,7 @@ async touchNote() {
 @証 物証 2026-08-10 append を先に積んだ状態で touch の自動承認を有効にしても適用されず、append を承認した 233 ミリ秒後に touch がサーバへ届いた
 @証 証言 auto-approval.ts:73 A manual gate. Stop rather than skipping ahead to any later auto-eligible action.
 @証 証言 auto-approval.ts:56 nothing is silently applied past a human gate.
-@証 証言 overseer.ts:7863 Clearing this manual gate may unblock later auto-eligible pending actions on the same
+@証 証言 overseer.ts:9403 Clearing this manual gate may unblock later auto-eligible pending actions on the same
 
 ## 自己申告を信じるということ
 
@@ -353,7 +353,7 @@ async collect(actionId) {
 `counter.nw` と同じ形である。渡ってきたスタブは `.dup()` で長命にし、
 切断は `onRpcBroken` で拾って集合から外す。配信の失敗は握り潰す。
 
-@証 証言 agent.ts:503 it is important to call .dup() on the callback stub, in order to obtain a long-lived stub
+@証 証言 agent.ts:584 it is important to call .dup() on the callback stub, in order to obtain a long-lived stub
 
 <<更新の購読を受け付ける>>=
 
@@ -398,7 +398,7 @@ broadcast(log) {
 **入力欄が要るのはサンドボックスの制約でもある。** iframe の中では
 `prompt()` の類が使えないので、文字列を受け取る場所を自分で作るしかない。
 
-@証 証言 agent.ts:495 the iframe sandbox on the client side prohibits modal popup boxes like alert() and confirm()
+@証 証言 agent.ts:576 the iframe sandbox on the client side prohibits modal popup boxes like alert() and confirm()
 
 <<画面を組み立てる>>=
 const style = "font:14px sans-serif";
@@ -490,7 +490,7 @@ function render(log) {
 
 `counter.nw` と同じ形である。再接続を自前で作らない理由もあちらに書いた。
 
-@証 証言 agent.ts:532 calls made while its replacement is being acquired will wait
+@証 証言 agent.ts:613 calls made while its replacement is being acquired will wait
 
 <<サーバからの更新を受け取る>>=
 

@@ -370,7 +370,7 @@ Gadget の画面には **App / Code / Connections** のタブがある。
 観察: コードを編集すると、編集していない側のウィンドウは**数字が固まり、
 ボタンも不動になる**。エラーメッセージも出ない。リロードで復旧する。
 
-原因は `agent.ts:532` — `calls made while its replacement is being acquired will wait`
+原因は `agent.ts:613` — `calls made while its replacement is being acquired will wait`
 — つまりプラットフォームがエージェントに与えている説明にある。
 
 > The top-level `gadget` stub survives backend reconnects, and calls made
@@ -433,10 +433,16 @@ Gadget の画面には **App / Code / Connections** のタブがある。
 | 経路 | Workshop の外側の画面 → `subscribeToCode` | サンドボックス iframe → `gadget` スタブ |
 | コード再デプロイの影響 | 受けない | 壊れる |
 
-`api.ts:1598-1600` に「Interface to a workspace's Overseer … code sync
-(one Yjs doc for the whole workspace)」とある。コード doc はワークスペース全体で
-1 つで、`subscribeToCode` は Overseer のメソッド。一方 `gadget` スタブが繋がる先は
-我々が書いた `Gadget` クラスのインスタンスで、**別の Durable Object**。
+`api.ts:1599-1602` に「Interface to a workspace's Overseer … committed code
+(git commits in the workspace's shared object store, each gadget's head recorded in
+WorkpieceSummary.commitId)」とある。コードはワークスペース共有の object store に
+git コミットとして積まれ、`subscribeToCode` は Overseer のメソッド。一方
+`gadget` スタブが繋がる先は我々が書いた `Gadget` クラスのインスタンスで、
+**別の Durable Object**。
+
+（2026-08-23 に書き換えた。上流 #275 が保存を Yjs の doc から git コミットへ
+移したためで、**この節の主張は変わっていない**——変わったのは機構の説明である。
+旧文は「code sync (one Yjs doc for the whole workspace)」だった。）
 
 **必然である。** 置き換えられる側と置き換える側が同じ接続に乗っていたら、
 保存した瞬間にエディタ自身が切れて保存できなくなる。
@@ -589,7 +595,7 @@ push しておけば、その状態が恒久的に取り出せる。
 
 手順2 の原文は「副作用のある操作をエージェントにさせる」だったが、
 承認待ちを作る `submitAction` の呼び出し元は `GatekeeperCaller` 型で、
-`{from: "gadget", gadgetId}` を含む（`overseer.ts:7052-7068` — `from: "gadget";`）。
+`{from: "gadget", gadgetId}` を含む（`overseer.ts:8638-8654` — `from: "gadget";`）。
 **Gadget が binding を叩けば pending が立つ。** §2.7 の「エージェントを迂回する」
 筋がここでも通った。
 
@@ -605,7 +611,7 @@ push しておけば、その状態が恒久的に取り出せる。
 `"vetted"` になる。
 
 ローカルの MCP サーバに繋ぐには `MCP_ALLOW_INSECURE=true` が要る。
-`run-dev-server.ts:432-438` — `"gatekeeper-mcp": ["MCP_ALLOW_INSECURE"]` — が
+`run-dev-server.ts:434-440` — `"gatekeeper-mcp": ["MCP_ALLOW_INSECURE"]` — が
 これを `.dev.vars` から gatekeeper へ渡す配線を持っており、**ローカル開発を想定した公式の逃げ道**である。
 
 再現手順:
@@ -676,7 +682,7 @@ if (record.description.autoApprovable !== true || rule === undefined) {
 後に積んだ状態で `notes_touch` のルールを有効にしても、**何も起きなかった**。
 `notes_append` を承認した **233 ミリ秒後**に `notes_touch` が誰にも聞かれずに走った。
 承認が関門を外し、堰き止められていた保留が続けて流れた形である
-（`overseer.ts:7863` に "Clearing this manual gate may unblock later auto-eligible
+（`overseer.ts:9403` に "Clearing this manual gate may unblock later auto-eligible
 pending actions" とある）。
 
 **UI の文言はこの場合を想定していない。** ルール作成の確認ダイアログは
@@ -700,7 +706,7 @@ MCP は `actionKindFor` が必ず `scopeTag:toolName` のタグを付ける（`t
 - **アカウントは移設で来ない。** `.wrangler/state` は git に入らないので、
   別マシンで作ったアカウントは存在しない。**ログインではなく新規作成**が要る。
   `signupsEnabled` は既定 true
-- **管理者名は `admin` に固定。** `run-dev-server.ts:478` — `config.vars.ADMINS = ["admin"];`
+- **管理者名は `admin` に固定。** `run-dev-server.ts:480` — `config.vars.ADMINS = ["admin"];`
   — がハードコードしており `.dev.vars` では変えられない。
   ただし手順2 の範囲（接続・Gadget 作成・承認）は一般ユーザで足りた
 - **dev サーバはセッションに紐づけて起動すると道連れで落ちる。**
@@ -1195,7 +1201,7 @@ Cookie とセッションの有効範囲は**オリジン（scheme + host + port
 この衝突は構造的である。**
 
 さらに厄介なのは、フロントエンドが「認証済み」と判断してしまった点である。
-未認証なら本来ログイン画面に落ちる——`__root.tsx:88` に「Not authenticated and not
+未認証なら本来ログイン画面に落ちる——`__root.tsx:82` に「Not authenticated and not
 a public route」とあり、そこで `LoginPage` へ分岐する。
 
 その分岐が働かなかったので、**認証済みのつもりで全 RPC が失敗する**という
@@ -1652,14 +1658,14 @@ curl -s -w 'HTTP %{http_code}\n' \
 > enumerate them programmatically (this will not work, **as they are RPC interfaces**).
 > Use the describeBinding tool to learn what interface they provide before writing any code.
 >
-> — `agent.ts:728`
+> — `agent.ts:809`
 
 資源が接続されたときの案内も同じである。
 
 > the resource becomes available as `env.<bindingName>`, which you can describeBinding
 > and **use from executeCode**
 >
-> — `agent.ts:760`
+> — `agent.ts:841`
 
 つまり **MCP ツールを「ツールとして」エージェントに見せる道はそもそも用意されていない。**
 `readOnlyHint` による観測／行動の分類は効くが（後述）、それは
@@ -2182,6 +2188,78 @@ $out .= ($line =~ /^[ \t]*$/) ? $line : $indent . $line;
 
 **出自の印は鮮度の印ではない**（§6.1 弱点 5）という話が、
 悪意も不注意もない経路でもう一度出たことになる。
+
+### 2.34 五度目の追従 — 境界は残り、内部が動いた（2026-08-23）
+
+上流 13 コミット（152 ファイル、+20,834 −5,152）。rebase は**衝突ゼロ**。
+
+引用は 30 件落ちた。27 件は移動なので機械で直り、2 件は範囲の絞り込み、
+**1 件だけが本物**だった。
+
+```
+旧: code sync (one Yjs doc for the whole workspace)
+新: committed code (git commits in the workspace's shared object store, …)
+```
+
+`api.ts` の記述そのものが書き換わっている。§2.5 の主張——Code は Overseer、
+App は Gadget、**別の Durable Object**——は無傷なので、
+**機構の説明だけ**を直し、旧文が何だったかを併記した。
+
+#### #275 — 保存が Yjs から git になった
+
+「Convert backing storage to git, change sync to OT, editor widget to CodeMirror」。
+実験の土台なので影響を切り分けた。
+
+| | どうなったか |
+|---|---|
+| `.gadget` の書庫形式 | **無変更**。Yjs V2 の無名ルートのまま |
+| `mkgadget` / `ckgadget` | **そのまま通る** |
+| 実体の保存 | `code:*` の Yjs 更新ログ → `gitObjects` の git ルーズオブジェクト |
+| 我々の覗き方 | **死んだ**（§2.32 で使った `code:*` の解読） |
+
+**境界は残り、内部が動いた。** `.gadget` は上流と我々の受け渡し面で、
+そこに向けて自分で書いた道具（規約 2）は生き延びた。一方、
+**内部を読み解いて作った観測手段は壊れた**。依存する先を選んだ結果が、
+そのまま生死を分けている。
+
+`initializeFromBlueprint` は今も archive を Yjs として解き、その中身を
+git のコミットとして書く。**入口だけ据え置いて、奥を入れ替えた**格好である。
+
+#### `tools/wsdump` を書いた
+
+`gitObjects` は「**git が書くのとバイト単位で同じ**ルーズオブジェクト」だと
+`git-store.ts` が述べている。ならば解読を書く必要はない。
+取り出して `.git/objects/` に並べ、**`git` 自身に読ませる**。
+
+```
+tools/wsdump --list                走っているワークスペースを列挙する
+tools/wsdump <workspace-id> -o dir Gadget のファイルを取り出す
+```
+
+要るのは node・sqlite3・git で、**git は元から必須依存**である。
+覗く相手が独自の CRDT ログから**2005 年から変わっていない形式**になったので、
+観測の足場としてはむしろ丈夫になった。
+
+#### 移行は忠実だった
+
+ワークスペースを開くと migration が走り、21 個の git オブジェクトができた。
+取り出して検めたところ、**昨日締めた状態そのまま**である。
+
+- `server.js` — 文書から tangle した結果と**完全一致**
+- `client.js` — 末尾改行を除いて一致（§2.28 の返却路の件）
+- 両方とも `nwitness` が「出自 toy.nw から」と通す
+
+合成された履歴は 7 コミットで、**我々の作業の時刻がそのまま残っていた**。
+
+```
+5b5db2e 08/20 16:32  code versions 10-11   ← server.js に banner を貼った回
+d1f9ea6 08/16 16:06  code versions 1-5
+cb3c0e1 08/16 15:57  initial empty state   ← .gadget を読み込んだ瞬間
+```
+
+**ワークスペースに本物の git 履歴が生えた**ことになる。§6.3 が測ろうとしている
+「変更を差分として読む」の材料が、実機の側にも現れた。使うかどうかは別として、
+**観測できるものが一つ増えた**のは記録しておく。
 
 ---
 

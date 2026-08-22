@@ -23,7 +23,7 @@ Gadget が外の世界に触れると何が起きるかを見るための Gadget
 呼び出し元を選ばず、Gadget からの呼び出しもそこに含まれる。
 <code>§2.7</code> で使った「エージェントを迂回する」筋がここでも通る。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>overseer.ts:7056</span>from: "gadget";</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>overseer.ts:8642</span>from: "gadget";</div>
 <div class="ev ev-推理"><span class=k>推理</span><span class=src>overseer.ts:6954-6970</span>呼び出し元は agent / gadget / user / hook の四つで、gadget はそのうちの一つ</div>
 <p>
 <h2>三つの道具と、その期待される扱い</h2>
@@ -50,7 +50,7 @@ MCP のツールが「読み取り」か「承認の要る操作」かは、
 <div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:84</span>mode: readOnly ? "read" : "action",</div>
 <div class="ev ev-証言"><span class=k>証言</span><span class=src>tools.ts:77-80</span>const autoApprovable = !readOnly &amp;&amp; trust === "vetted" &amp;&amp; annotations.destructiveHint === false &amp;&amp; annotations.idempotentHint === true;</div>
 <div class="ev ev-証言"><span class=k>証言</span><span class=src>mcp.ts:78</span>const TRUST: ServerTrust = "byo";</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>run-dev-server.ts:435</span>"MCP_PORTAL_TRUST_ANNOTATIONS", "MCP_ALLOW_INSECURE",</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>run-dev-server.ts:437</span>"MCP_PORTAL_TRUST_ANNOTATIONS", "MCP_ALLOW_INSECURE",</div>
 <p>
 <hr>
 <p>
@@ -62,8 +62,8 @@ MCP のツールが「読み取り」か「承認の要る操作」かは、
 <code>fetch()</code> でインターネットに出られない。外の世界に触れる道は binding だけで、
 それが <code>this.env</code> に生えている。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:470</span>The class must be exported under the name <code>Gadget</code></div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:493</span>a Gadget communicates with the outside world strictly through its "bindings"</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:551</span>The class must be exported under the name <code>Gadget</code></div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:574</span>a Gadget communicates with the outside world strictly through its "bindings"</div>
 <p>
 <pre><b class=cn>&lt;&lt;server.js&gt;&gt;=</b>
 import { DurableObject } from "cloudflare:workers";
@@ -89,7 +89,7 @@ export class Gadget extends DurableObject {
 <code>counter.nw</code> と同じ理由で、接続中のブラウザから預かったコールバックは
 メモリの集合に置く。接続が切れれば意味を失う情報だからである。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:540</span>Memory is OK to use for caching</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:621</span>Memory is OK to use for caching</div>
 <p>
 <pre><b class=cn>&lt;&lt;購読者の集合を用意する&gt;&gt;=</b>
 constructor(ctx, env) {
@@ -129,7 +129,7 @@ get notes() {
 <p>
 古いものから捨てて 20 件だけ持つ。観察用なので全部は要らない。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:540</span>ALWAYS store server state in Durable Object storage, not just in memory</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:621</span>ALWAYS store server state in Durable Object storage, not just in memory</div>
 <p>
 <pre><b class=cn>&lt;&lt;記録を読む&gt;&gt;=</b>
 
@@ -265,7 +265,7 @@ async touchNote() {
 <div class="ev ev-物証"><span class=k>物証</span><span class=src>2026-08-10</span>append を先に積んだ状態で touch の自動承認を有効にしても適用されず、append を承認した 233 ミリ秒後に touch がサーバへ届いた</div>
 <div class="ev ev-証言"><span class=k>証言</span><span class=src>auto-approval.ts:73</span>A manual gate. Stop rather than skipping ahead to any later auto-eligible action.</div>
 <div class="ev ev-証言"><span class=k>証言</span><span class=src>auto-approval.ts:56</span>nothing is silently applied past a human gate.</div>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>overseer.ts:7863</span>Clearing this manual gate may unblock later auto-eligible pending actions on the same</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>overseer.ts:9403</span>Clearing this manual gate may unblock later auto-eligible pending actions on the same</div>
 <p>
 <h2>自己申告を信じるということ</h2>
 <p>
@@ -355,7 +355,7 @@ async collect(actionId) {
 <code>counter.nw</code> と同じ形である。渡ってきたスタブは <code>.dup()</code> で長命にし、
 切断は <code>onRpcBroken</code> で拾って集合から外す。配信の失敗は握り潰す。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:503</span>it is important to call .dup() on the callback stub, in order to obtain a long-lived stub</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:584</span>it is important to call .dup() on the callback stub, in order to obtain a long-lived stub</div>
 <p>
 <pre><b class=cn>&lt;&lt;更新の購読を受け付ける&gt;&gt;=</b>
 
@@ -400,7 +400,7 @@ broadcast(log) {
 <strong>入力欄が要るのはサンドボックスの制約でもある。</strong> iframe の中では
 <code>prompt()</code> の類が使えないので、文字列を受け取る場所を自分で作るしかない。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:495</span>the iframe sandbox on the client side prohibits modal popup boxes like alert() and confirm()</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:576</span>the iframe sandbox on the client side prohibits modal popup boxes like alert() and confirm()</div>
 <p>
 <pre><b class=cn>&lt;&lt;画面を組み立てる&gt;&gt;=</b>
 const style = "font:14px sans-serif";
@@ -492,7 +492,7 @@ function render(log) {
 <p>
 <code>counter.nw</code> と同じ形である。再接続を自前で作らない理由もあちらに書いた。
 <p>
-<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:532</span>calls made while its replacement is being acquired will wait</div>
+<div class="ev ev-証言"><span class=k>証言</span><span class=src>agent.ts:613</span>calls made while its replacement is being acquired will wait</div>
 <p>
 <pre><b class=cn>&lt;&lt;サーバからの更新を受け取る&gt;&gt;=</b>
 

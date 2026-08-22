@@ -1,0 +1,124 @@
+#!/usr/bin/env node
+// wsdump - 走っている Cloudflare OS のワークスペースから、Gadget のファイルを取り出す。
+//
+// 上流 #275 でコードの保存が Yjs の更新ログから **git のコミット** に変わった
+// （HANDOFF.md §2.34）。オブジェクトは `gitObjects` コレクションに、
+// **git が書くのとバイト単位で同じルーズオブジェクト**として入っている。
+// だから解読を書く必要はない。取り出して `.git/objects/` に並べ、git に読ませる。
+//
+// 使い方:
+//   tools/wsdump <workspace-id> [-o 出力先]
+//   tools/wsdump --list                      ワークスペースを列挙する
+//
+// 要るもの: node, sqlite3, git。いずれも既に前提にある。
+
+import { execFileSync } from "node:child_process";
+import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { deserialize } from "node:v8";
+
+const DO_DIR = "reference/cloudflare-os/.wrangler/state/v3/do/" +
+               "workshop-backend-OverseerDurableObject";
+
+// stderr は捨てる。実表を持たない `.N.sqlite` を試すたびに sqlite3 が
+// 「no such table」と鳴くが、それは探索の一部であって異常ではない。
+const sql = (db, q) =>
+  execFileSync("sqlite3", [db, q],
+    { encoding: "utf8", maxBuffer: 1 << 28, stdio: ["ignore", "pipe", "ignore"] }).trim();
+
+const value = (db, key) => {
+  const hex = sql(db, `SELECT hex(value) FROM _cf_KV WHERE key='${key}';`);
+  return hex ? deserialize(Buffer.from(hex, "hex")) : undefined;
+};
+
+// miniflare は 1 つの DO につき `<id>.sqlite` のほか `<id>.1.sqlite` などを作る。
+// 実表を持つのは 1 つだけなので、引けたものだけを残す。
+function workspaces() {
+  const paths = execFileSync("bash", ["-c",
+    `ls ${DO_DIR}/*.sqlite 2>/dev/null | grep -v metadata`],
+    { encoding: "utf8" }).trim().split("\n").filter(Boolean);
+  const live = [];
+  for (const p of paths) {
+    try { sql(p, "SELECT 1 FROM _cf_KV LIMIT 1;"); live.push(p); } catch { /* 実表がない */ }
+  }
+  return live;
+}
+
+function idOf(path) {
+  return path.split("/").pop().replace(/(\.\d+)?\.sqlite$/, "");
+}
+
+if (process.argv.includes("--list")) {
+  for (const db of workspaces()) {
+    let title = "", n = "?";
+    try { title = value(db, "title") ?? ""; } catch {}
+    try { n = sql(db, `SELECT count(*) FROM _cf_KV WHERE key LIKE 'gitObjects:%';`); } catch {}
+    console.log(`${idOf(db)}  ${JSON.stringify(title)}  git オブジェクト ${n}`);
+  }
+  process.exit(0);
+}
+
+const wsId = process.argv[2];
+if (!wsId || wsId.startsWith("-")) {
+  console.error("usage: wsdump <workspace-id> [-o dir]   /   wsdump --list");
+  process.exit(2);
+}
+const outIdx = process.argv.indexOf("-o");
+const outDir = outIdx > 0 ? process.argv[outIdx + 1] : join(tmpdir(), `ws-${wsId.slice(0, 8)}`);
+
+// 同じ id の `.sqlite` と `.N.sqlite` が並ぶので、**中身のあるほうを選ぶ**。
+// 世代が変わると古い側が空で残り、素直に先頭を取ると 0 個になる。
+const candidates = workspaces().filter(p => idOf(p) === wsId || p.includes(wsId));
+if (!candidates.length) { console.error(`wsdump: ${wsId} が見つからない`); process.exit(1); }
+const counted = candidates.map(p => {
+  let n = 0;
+  try { n = Number(sql(p, `SELECT count(*) FROM _cf_KV WHERE key LIKE 'gitObjects:%';`)); } catch {}
+  return { p, n };
+}).sort((a, b) => b.n - a.n);
+const db = counted[0].p;
+if (counted[0].n === 0) {
+  console.error(`wsdump: ${wsId} に git オブジェクトがない。` +
+                `移行はワークスペースを開いたときに走る——ブラウザで一度開くこと。`);
+  process.exit(1);
+}
+
+// ---- git のオブジェクト庫を組み立てる ----
+const gitDir = join(outDir, ".git");
+rmSync(outDir, { recursive: true, force: true });
+mkdirSync(join(gitDir, "objects"), { recursive: true });
+writeFileSync(join(gitDir, "HEAD"), "ref: refs/heads/main\n");
+mkdirSync(join(gitDir, "refs", "heads"), { recursive: true });
+
+const oids = sql(db, `SELECT key FROM _cf_KV WHERE key LIKE 'gitObjects:%';`)
+  .split("\n").filter(Boolean);
+for (const key of oids) {
+  const rec = value(db, key);
+  const oid = rec.oid ?? key.slice("gitObjects:".length);
+  const data = rec.data ?? rec;
+  mkdirSync(join(gitDir, "objects", oid.slice(0, 2)), { recursive: true });
+  writeFileSync(join(gitDir, "objects", oid.slice(0, 2), oid.slice(2)), Buffer.from(data));
+}
+console.log(`git オブジェクト ${oids.length} 個を ${gitDir} に並べた`);
+
+// ---- Gadget の head を辿って中身を出す ----
+const git = (...a) =>
+  execFileSync("git", ["--git-dir=" + gitDir, ...a], { encoding: "utf8", maxBuffer: 1 << 28 });
+
+const gadgets = sql(db, `SELECT key FROM _cf_KV WHERE key LIKE 'gadgets:%';`)
+  .split("\n").filter(Boolean);
+for (const key of gadgets) {
+  const g = value(db, key);
+  if (!g?.commitId) continue;
+  console.log(`\n=== ${key}  ${JSON.stringify(g.title ?? g.name ?? "")}  ${g.commitId} ===`);
+  let files;
+  try { files = git("ls-tree", "-r", "--name-only", g.commitId).trim().split("\n"); }
+  catch (e) { console.log("  読めない:", String(e.stderr ?? e.message).trim()); continue; }
+  for (const f of files.filter(Boolean)) {
+    const body = git("cat-file", "-p", `${g.commitId}:${f}`);
+    const path = join(outDir, f);
+    writeFileSync(path, body);
+    console.log(`  ${f}  ${Buffer.byteLength(body)} バイト`);
+  }
+}
+console.log(`\n取り出し先: ${outDir}`);
